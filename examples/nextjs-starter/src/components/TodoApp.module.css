@@ -1,0 +1,123 @@
+/* Main container */
+.todo-app {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  font-family: 'Roboto', sans-serif;
+  padding: 40px 20px 20px;
+  position: relative;
+}
+
+/* Page Title */
+.page-title {
+  font-size: 36px;
+  font-weight: bold;
+  color: #333333;
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+/* Todo card */
+.todo-card {
+  width: 100%;
+  max-width: 800px;
+  min-height: 500px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Filters */
+.filters {
+  height: 40px;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+}
+
+.filter-button {
+  background: none;
+  border: none;
+  padding: 10px 20px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5a6268;
+  cursor: pointer;
+  border-bottom: 1px solid #eaeaea;
+  transition: all 0.2s ease;
+}
+
+.filter-button:hover {
+  color: #1e88e5;
+}
+
+.filter-active {
+  border-bottom: 2px solid #1e88e5;
+  color: #1e88e5;
+}
+
+/* Powered-by badge */
+.powered-badge {
+  text-align: center;
+  padding: 10px 0;
+  font-size: 12px;
+  color: #7f8c8d;
+  background-color: #f8f9fa;
+  border-top: 1px solid #eaeaea;
+  margin-top: auto;
+}
+
+.highlight {
+  color: #1e88e5;
+  font-weight: 500;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
+}
+
+/* Media queries for mobile adaptation */
+@media (max-width: 600px) {
+  .todo-card {
+    max-width: 100%;
+  }
+
+  .filter-button {
+    padding: 5px 10px;
+  }
+
+  .todo-form {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .todo-input {
+    width: 100%;
+    flex: auto;
+    padding: 10px 15px;
+  }
+
+  .todo-submit {
+    width: 100%;
+    flex: auto;
+    padding: 10px 0;
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "name": "@hpkv/zustand-multiplayer",
+  "version": "0.1.0",
+  "description": "A multiplayer state management middleware for Zustand using HPKV",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist",
+    "prepare": "npm run clean && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "check": "npm run lint && npm run format:check && npm run test"
+  },
+  "keywords": [
+    "zustand",
+    "state management",
+    "hpkv",
+    "multiplayer",
+    "collaborative",
+    "middleware",
+    "persist"
+  ],
+  "author": "HPKV Team",
+  "homepage": "https://github.com/hpkv-io/zustand-multiplayer#readme",
+  "bugs": {
+    "url": "https://github.com/hpkv-io/zustand-multiplayer/issues",
+    "email": "support@hpkv.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hpkv-io/zustand-multiplayer.git"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "zustand": "^5.0.0"
+  },
+  "dependencies": {
+    "@hpkv/websocket-client": "^1.2.3"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.30.1",
+    "@typescript-eslint/parser": "^8.30.1",
+    "@vitejs/plugin-react": "^4.0.0",
+    "@vitest/ui": "^3.1.1",
+    "dotenv": "^16.3.1",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^3.6.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jsx-a11y": "^6.8.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-testing-library": "^6.2.0",
+    "eslint-plugin-vitest": "^0.5.4",
+    "happy-dom": "^17.4.4",
+    "prettier": "^3.1.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.1.1",
+    "zustand": "^5.0.3"
+  }
+}

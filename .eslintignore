@@ -1,0 +1,31 @@
+# Build output
+dist/
+build/
+lib/
+coverage/
+examples/
+
+# Dependency directories
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Cache
+.cache/
+
+# Config files
+*.config.js
+!.eslintrc.js
+
+# Test fixtures
+**/fixtures/
+
+# Generated files
+**/*.d.ts
+**/*.js.map
+
+# Other
+.github/
+.vscode/ 
