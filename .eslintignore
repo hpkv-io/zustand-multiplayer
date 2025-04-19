@@ -3,10 +3,11 @@ dist/
 build/
 lib/
 coverage/
-examples/
+
 
 # Dependency directories
 node_modules/
+examples/
 
 # Logs
 logs/

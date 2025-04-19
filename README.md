@@ -30,15 +30,12 @@ A real-time synchronization middleware for [Zustand](https://github.com/pmndrs/z
 
 - **Real-time state synchronization** between multiple clients
 - **Persistent state storage** using HPKV WebSocket API
-- **Automatic rehydration** of state on page load
 - **Support for versioning and migrations**
 - **Connection status management** with automatic reconnection
 - **Throttling** to optimize network traffic
 - **TypeScript support** with full type definitions
 - **Custom merge strategies** for combining remote and local state
 - **Partial state persistence** with the partialize option
-- **Error handling and retries** with configurable retry options
-- **Debug logging** for troubleshooting
 
 ## Prerequisites
 
@@ -98,13 +95,6 @@ This middleware is ideal for a wide range of applications:
 - **Live dashboards**: Data visualization that updates in real-time for all viewers
 - **Multiplayer games**: Synchronized game state across players
 
-#### 4. Offline-capable Applications
-- **Progressive Web Apps**: Works online and offline with automatic synchronization when connection is restored
-- **Mobile applications**: Native apps that work regardless of connectivity status
-- **Field service applications**: Collect data offline and sync when connection is available
-
-The multiplayer middleware handles the complex challenges of distributed state management, including conflict resolution, connection management, and efficient state synchronization, allowing you to focus on building your application's core functionality.
-
 ## Usage
 
 ### Creating a multiplayer store
@@ -160,7 +150,7 @@ const useCounterStore = create(
 )
 ```
 
-### Setting up the token server
+### Setting up the token endpoint
 
 You need to create a token generation endpoint that will be called by the middleware. The middleware provides a `TokenHelper` class to make this easier:
 
@@ -207,7 +197,6 @@ Sometimes you might want to persist only specific parts of your state. An exampl
 
 You can use the `partialize` option to specify exactly which parts of the state should be shared:
 
-#### TypeScript Example
 ```ts
 const useEditorStore = create<StateWithMultiplayer<EditorState>>()(
   multiplayer(
@@ -248,47 +237,6 @@ const useEditorStore = create<StateWithMultiplayer<EditorState>>()(
 )
 ```
 
-#### JavaScript Example
-```js
-const useEditorStore = create(
-  multiplayer(
-    (set) => ({
-      // Shared state
-      document: { 
-        content: "",
-        lastModified: null,
-        version: 1
-      },
-      // Client-specific state
-      ui: { 
-        selectedText: "", 
-        cursorPosition: { line: 0, column: 0 },
-        sidebarOpen: false 
-      },
-      isLoading: false,
-      
-      // Actions
-      updateContent: (content) => set(state => ({ 
-        document: { 
-          ...state.document, 
-          content,
-          lastModified: new Date()
-        }
-      })),
-    }),
-    {
-      name: 'collaborative-editor',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      // Only sync the document part, not UI state or loading indicators
-      partialize: (state) => ({
-        document: state.document
-      }),
-    }
-  )
-)
-```
-
 With this setup, when any client calls `updateContent()`, only the document data will be synchronized across all clients, while each client maintains its own UI state. This reduces network traffic and prevents unnecessary UI updates across clients.
 
 ### Custom state merging with deep objects
@@ -303,7 +251,6 @@ When working with deeply nested state objects, the default shallow merge strateg
 
 3. **Dashboard layouts**: Apps with customizable dashboards where widgets can be arranged and configured independently.
 
-#### TypeScript Example
 ```ts
 import { create } from 'zustand'
 import { multiplayer, StateWithMultiplayer } from '@hpkv/zustand-multiplayer'
@@ -389,82 +336,12 @@ const useSettingsStore = create<StateWithMultiplayer<AppSettings>>()(
 )
 ```
 
-#### JavaScript Example
-```js
-import { create } from 'zustand'
-import { multiplayer } from '@hpkv/zustand-multiplayer'
-import createDeepMerge from '@fastify/deepmerge'
-
-// Create a deep merge utility
-const deepMerge = createDeepMerge({ all: true })
-
-const useSettingsStore = create(
-  multiplayer(
-    (set) => ({
-      // Deeply nested initial state
-      config: {
-        appearance: { 
-          theme: 'light', 
-          fontSize: 14,
-          accentColor: '#3498db',
-          animations: true
-        },
-        privacy: { 
-          shareUsageData: false,
-          storeHistory: true,
-          cookiePreferences: {
-            analytics: false,
-            marketing: false,
-            necessary: true
-          }
-        },
-        notifications: {
-          email: true,
-          push: false,
-          frequency: 'daily'
-        }
-      },
-      
-      // Action to update just a portion of the appearance settings
-      updateAppearance: (appearance) => set(state => ({
-        config: {
-          ...state.config,
-          appearance: {
-            ...state.config.appearance,
-            ...appearance
-          }
-        }
-      }))
-    }),
-    {
-      name: 'app-settings',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      // Custom merge function to properly handle deep objects
-      merge: (persistedState, currentState) => 
-        deepMerge(currentState, persistedState)
-    }
-  )
-)
-```
-
 With this setup, when a user changes their theme on one device, only that part of the deeply nested configuration gets updated across all instances of the application. The `merge` function ensures all levels of nesting are properly combined when state is rehydrated from storage or received from other clients.
 
 This approach is particularly valuable for applications with complex configuration options where different parts of the configuration might be modified independently by different clients.
 
 ### Managing connection status
 
-In real-time multiplayer applications, monitoring connection status is crucial for providing users with feedback about their sync state and implementing recovery strategies when connections are lost.
-
-#### Real-world use cases:
-
-1. **Collaborative editing**: Show indicators when changes are being synced, saved, or if a user is offline.
-
-2. **Multiplayer games**: Alert players when they lose connection and attempt to reconnect automatically.
-
-3. **Real-time dashboards**: Indicate when data is stale due to connection issues and provide manual refresh options.
-
-#### TypeScript Example
 ```tsx
 import React, { useState, useEffect } from 'react';
 import { create } from 'zustand';
@@ -506,181 +383,31 @@ const useDocStore = create<StateWithMultiplayer<CollaborativeStore>>()(
 // Connection status component with automatic reconnection
 function ConnectionStatusBar() {
   const { multiplayer } = useDocStore();
-  const [isConnected, setIsConnected] = useState(multiplayer.isConnected());
-  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [isConnected, setIsConnected] = useState(multiplayer?.isConnected() ?? false);
   
   // Poll connection status
   useEffect(() => {
-    // Check connection immediately
-    setIsConnected(multiplayer.isConnected());
+    if(multiplayer){
+      setIsConnected(multiplayer.isConnected());
+    }
     
     // Set up polling interval
     const interval = setInterval(() => {
       const connected = multiplayer.isConnected();
       setIsConnected(connected);
-      
-      // If we've reconnected, update the last synced time
-      if (connected && !isConnected) {
-        setLastSynced(new Date());
-      }
     }, 1000);
     
     return () => clearInterval(interval);
-  }, [multiplayer, isConnected]);
+  }, [multiplayer]);
   
-  // Implement reconnection logic
-  const handleReconnect = async () => {
-    if (!isConnected) {
-      // If disconnected, trigger rehydration which will attempt to reconnect
-      await multiplayer.rehydrate();
-      setIsConnected(multiplayer.isConnected());
-      if (multiplayer.isConnected()) {
-        setLastSynced(new Date());
-      }
-    }
-  };
   
   return (
-    <div className="connection-status-bar">
-      <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
+      <div>
         {isConnected ? 'Connected' : 'Disconnected'}
       </div>
-      
-      {lastSynced && (
-        <div className="last-synced">
-          Last synced: {lastSynced.toLocaleTimeString()}
-        </div>
-      )}
-      
-      {!isConnected && (
-        <button onClick={handleReconnect} className="reconnect-button">
-          Reconnect
-        </button>
-      )}
-    </div>
   );
 }
 
-// Usage in your app
-function CollaborativeEditor() {
-  const { document, updateContent } = useDocStore();
-  
-  return (
-    <div className="editor-container">
-      <ConnectionStatusBar />
-      <textarea 
-        value={document.content}
-        onChange={(e) => updateContent(e.target.value)}
-        placeholder="Start typing..."
-      />
-    </div>
-  );
-}
-```
-
-#### JavaScript Example
-```jsx
-import React, { useState, useEffect } from 'react';
-import { create } from 'zustand';
-import { multiplayer } from '@hpkv/zustand-multiplayer';
-
-// Create the store with multiplayer
-const useDocStore = create(
-  multiplayer(
-    (set) => ({
-      document: {
-        content: '',
-        lastModified: null,
-      },
-      updateContent: (content) => 
-        set(state => ({ 
-          document: {
-            content,
-            lastModified: new Date(),
-          }
-        })),
-    }),
-    {
-      name: 'collaborative-doc',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-    }
-  )
-);
-
-// Connection status component with automatic reconnection
-function ConnectionStatusBar() {
-  const { multiplayer } = useDocStore();
-  const [isConnected, setIsConnected] = useState(multiplayer.isConnected());
-  const [lastSynced, setLastSynced] = useState(null);
-  
-  // Poll connection status
-  useEffect(() => {
-    // Check connection immediately
-    setIsConnected(multiplayer.isConnected());
-    
-    // Set up polling interval
-    const interval = setInterval(() => {
-      const connected = multiplayer.isConnected();
-      setIsConnected(connected);
-      
-      // If we've reconnected, update the last synced time
-      if (connected && !isConnected) {
-        setLastSynced(new Date());
-      }
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [multiplayer, isConnected]);
-  
-  // Implement reconnection logic
-  const handleReconnect = async () => {
-    if (!isConnected) {
-      // If disconnected, trigger rehydration which will attempt to reconnect
-      await multiplayer.rehydrate();
-      setIsConnected(multiplayer.isConnected());
-      if (multiplayer.isConnected()) {
-        setLastSynced(new Date());
-      }
-    }
-  };
-  
-  return (
-    <div className="connection-status-bar">
-      <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
-        {isConnected ? 'Connected' : 'Disconnected'}
-      </div>
-      
-      {lastSynced && (
-        <div className="last-synced">
-          Last synced: {lastSynced.toLocaleTimeString()}
-        </div>
-      )}
-      
-      {!isConnected && (
-        <button onClick={handleReconnect} className="reconnect-button">
-          Reconnect
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Usage in your app
-function CollaborativeEditor() {
-  const { document, updateContent } = useDocStore();
-  
-  return (
-    <div className="editor-container">
-      <ConnectionStatusBar />
-      <textarea 
-        value={document.content}
-        onChange={(e) => updateContent(e.target.value)}
-        placeholder="Start typing..."
-      />
-    </div>
-  );
-}
 ```
 
 This implementation provides users with real-time feedback about their connection status, shows when data was last synchronized, and offers a manual reconnection option. This pattern is essential for collaborative applications where users need to know if their changes are being synchronized with other clients.
@@ -750,10 +477,6 @@ const useStore = create<StateWithMultiplayer<MyState>>()(
 2. **Token errors**: Verify your token generation endpoint is working correctly and returning valid tokens.
 
 3. **Hydration issues**: If state isn't persisting, check browser console for errors and verify that all required options are provided.
-
-4. **Performance problems**: If updates are too frequent, adjust the `throttleDelay` option to a higher value to reduce network traffic.
-
-5. **Migration errors**: Ensure your migration function handles all previous versions correctly.
 
 ### Debug mode
 
