@@ -1,6 +1,6 @@
 {
   "name": "@hpkv/zustand-multiplayer",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "A multiplayer state management middleware for Zustand using HPKV",
   "type": "module",
   "main": "dist/index.js",
@@ -9,14 +9,6 @@
     "dist/**",
     "README.md"
   ],
-  "exports": {
-    ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      }
-    }
-  },
   "scripts": {
     "build": "tsc",
     "clean": "rimraf dist",
