@@ -1,6 +1,6 @@
 {
   "name": "@hpkv/zustand-multiplayer",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "description": "A multiplayer state management middleware for Zustand using HPKV",
   "type": "module",
   "main": "dist/index.js",

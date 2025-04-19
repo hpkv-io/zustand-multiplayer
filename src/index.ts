@@ -1,11 +1,10 @@
-export { TokenHelper } from './token-helper.js';
-export { logger, setLogger } from './logger.js';
-export type { LoggerInterface } from './logger.js';
-export { multiplayer } from './multi-player.js';
-export type {
+export { TokenHelper } from './token-helper';
+export { logger, setLogger, LoggerInterface } from './logger';
+export {
+  multiplayer,
   StateWithMultiplayer,
   HPKVStorageOptions,
   MultiplayerApi,
   MultiplayerOptions,
   StorageValue,
-} from './multi-player.js';
+} from './multi-player';
