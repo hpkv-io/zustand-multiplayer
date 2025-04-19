@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 
-import { TokenHelper } from '../../../../../dist';
+import { TokenHelper } from '@hpkv/zustand-multiplayer';
 
 // Create a token helper instance
 const tokenHelper = new TokenHelper(

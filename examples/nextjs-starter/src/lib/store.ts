@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { multiplayer, StateWithMultiplayer } from '../../../../dist';
+import { multiplayer, StateWithMultiplayer } from '@hpkv/zustand-multiplayer';
 
 // Define the Todo interface
 interface Todo {
