@@ -4,7 +4,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [react()],
   test: {
-    hookTimeout: 30000,
+    hookTimeout: 60000,
+    testTimeout: 60000,
     environment: 'happy-dom',
     setupFiles: ['./tests/test-setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],

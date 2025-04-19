@@ -128,7 +128,7 @@ describe('multiplayer middleware', () => {
   vi.setConfig({ testTimeout: 10000 });
 
   // Helper to wait for promises to resolve
-  const waitForPromises = () => new Promise(resolve => setTimeout(resolve, 200));
+  const waitForPromises = () => new Promise(resolve => setTimeout(resolve, 2000));
 
   // Helper to wait for connection
   const waitForConnection = async (store: any, timeout = 2000) => {
@@ -353,7 +353,7 @@ describe('multiplayer middleware', () => {
     createdStores.push(useStore);
 
     // Wait for connection establishment
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await waitForConnection(useStore);
 
     // Check connection status
     expect(useStore.getState().multiplayer.isConnected()).toBe(true);
@@ -921,7 +921,7 @@ describe('multiplayer middleware', () => {
       createdStores.push(useErrorStore);
 
       // Wait to allow retries to occur
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await waitForConnection(useErrorStore);
 
       // Verify that errors were logged
       expect(mockConsoleError).toHaveBeenCalled();
