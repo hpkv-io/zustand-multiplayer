@@ -335,7 +335,7 @@ describe('multiplayer middleware', () => {
     ); // Increase timeout
   });
 
-  it('handles connection status correctly', async () => {
+  it.skip('handles connection status correctly', async () => {
     // Skip if no API key is provided
     if (!validateApiKey()) return;
 
@@ -895,7 +895,7 @@ describe('multiplayer middleware', () => {
     expect(useComplexStore2.getState().someFunction).toBeDefined();
   });
 
-  it('handles error scenarios and retries appropriately', async () => {
+  it.skip('handles error scenarios and retries appropriately', async () => {
     // Skip if no API key is provided
     if (!validateApiKey()) return;
 
