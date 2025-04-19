@@ -1,5 +1,8 @@
 # Zustand Multiplayer Middleware
 
+[![npm version](https://img.shields.io/npm/v/@hpkv/zustand-multiplayer.svg)](https://www.npmjs.com/package/@hpkv/zustand-multiplayer)
+[![npm downloads](https://img.shields.io/npm/dm/@hpkv/zustand-multiplayer.svg)](https://www.npmjs.com/package/@hpkv/zustand-multiplayer)
+
 A real-time synchronization middleware for [Zustand](https://github.com/pmndrs/zustand) that uses [HPKV](https://hpkv.io)'s [WebSocket API](https://hpkv.io/docs/websocket-api) for storage and real-time updates across clients.
 
 ## Table of Contents
