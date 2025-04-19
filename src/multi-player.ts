@@ -9,7 +9,7 @@ import {
 import type { StateCreator, StoreApi } from 'zustand';
 import { type StateStorage, type PersistStorage } from 'zustand/middleware';
 
-import { logger } from './logger'; // Adjust the path as needed
+import { logger } from './logger';
 
 /**
  * HPKV storage options for the multiplayer middleware
