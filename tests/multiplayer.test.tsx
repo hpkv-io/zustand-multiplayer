@@ -795,13 +795,12 @@ describe('multiplayer middleware', () => {
           apiBaseUrl: process.env.HPKV_BASE_URL || 'https://api-eu-1.hpkv.io',
           throttleDelay: 50,
           // Only persist serializable values
-          partialize: state =>
-            ({
-              regularValue: state.regularValue,
-              dateValue: state.dateValue,
-              // Convert Map to array for storage
-              mapValue: Array.from(state.mapValue.entries()),
-            }) as any,
+          partialize: state => ({
+            regularValue: state.regularValue,
+            dateValue: state.dateValue,
+            // Convert Map to array for storage
+            mapValue: Array.from(state.mapValue.entries()),
+          }),
           // Custom merge function to handle special types
           merge: (persisted: any, current: ComplexState) => {
             return {

@@ -452,7 +452,7 @@ export interface MultiplayerOptions<S> {
    *
    * @params state The state's value
    */
-  partialize?: (state: S) => S;
+  partialize?: (state: S) => Partial<S> | any;
 
   /**
    * A function returning another (optional) function.
