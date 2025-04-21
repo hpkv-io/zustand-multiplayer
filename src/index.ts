@@ -8,3 +8,4 @@ export {
   MultiplayerOptions,
   StorageValue,
 } from './multi-player';
+export type { TokenRequest, TokenResponse } from './types/token-api';

@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future fixes will be listed here
 
+## [0.1.2-alpha] - 2025-04-21
+
+### Added
+
+- New token API interface types: `TokenRequest` and `TokenResponse`
+- Comprehensive token API documentation in `/docs/TOKEN_API.md`
+- Framework-specific token handler methods for Express, Next.js, and Fastify
+- Generic `processTokenRequest` method for custom framework implementations
+
+### Changed
+
+- Enhanced `TokenHelper` class with improved error handling and request validation
+
 ## [0.1.1-alpha] - 2025-04-21
 
 ### Changed
@@ -40,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.1-alpha...HEAD
-[0.1.0-alpha.9]: https://github.com/hpkv-io/zustand-multiplayer/releases/tag/v0.1.0-alpha.9
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.2-alpha...HEAD
+[0.1.2-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.1-alpha...v0.1.2-alpha
 [0.1.1-alpha]: https://github.com/hpkv-io/zustand-multiplayer/releases/tag/v0.1.1-alpha
+[0.1.0-alpha.9]: https://github.com/hpkv-io/zustand-multiplayer/releases/tag/v0.1.0-alpha.9

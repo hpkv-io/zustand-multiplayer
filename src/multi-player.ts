@@ -9,6 +9,7 @@ import {
 import type { StateCreator, StoreApi } from 'zustand';
 import { type PersistStorage, type StateStorage } from 'zustand/middleware';
 import { logger } from './logger';
+import { TokenRequest, TokenResponse } from './types/token-api';
 
 /**
  * HPKV storage options for the multiplayer middleware
@@ -107,20 +108,21 @@ async function getToken(
   const tokenPromise = retryOperation(async () => {
     try {
       // Fetch token from the token generation URL
+      const request: TokenRequest = { storeName };
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ storeName }),
+        body: JSON.stringify(request),
       });
 
       if (!response.ok) {
         throw new Error(`Failed to get token: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-      return data.token || data;
+      const data = (await response.json()) as TokenResponse;
+      return data.token;
     } catch (error) {
       logger.error('Failed to get token:', error);
       throw error;

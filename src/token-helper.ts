@@ -1,4 +1,5 @@
 import { HPKVClientFactory, WebsocketTokenManager, HPKVApiClient } from '@hpkv/websocket-client';
+import { TokenRequest, TokenResponse } from './types/token-api';
 
 /**
  * Utility to help generate WebSocket tokens for HPKV
@@ -48,6 +49,96 @@ export class TokenHelper {
         this.apiClient.destroy();
       }
     }
+  }
+
+  /**
+   * Process a token request and return a token response
+   * Works with any framework by accepting a simple request object
+   *
+   * @param requestData The request data object or string
+   * @returns TokenResponse object with the generated token
+   */
+  async processTokenRequest(requestData: unknown): Promise<TokenResponse> {
+    try {
+      // Parse the request data if it's a string
+      let parsedRequest: Partial<TokenRequest>;
+
+      if (typeof requestData === 'string') {
+        try {
+          parsedRequest = JSON.parse(requestData);
+        } catch {
+          throw new Error('Invalid request: Could not parse request data');
+        }
+      } else {
+        parsedRequest = requestData as Partial<TokenRequest>;
+      }
+
+      // Validate the request
+      const { storeName } = parsedRequest;
+
+      if (!storeName || typeof storeName !== 'string') {
+        throw new Error('Invalid request: storeName is required and must be a string');
+      }
+
+      // Generate the token
+      const token = await this.generateTokenForStore(storeName);
+
+      // Return the response
+      return { storeName, token };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('Unknown error during token generation');
+    }
+  }
+
+  /**
+   * Create a request handler function for Express/Connect style frameworks
+   *
+   * @returns A function that can be used as an Express route handler
+   */
+  createExpressHandler() {
+    return async (req: any, res: any) => {
+      try {
+        const response = await this.processTokenRequest(req.body);
+        res.json(response);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        res.status(400).json({ error: message });
+      }
+    };
+  }
+
+  /**
+   * Create a handler for Next.js API routes
+   */
+  createNextApiHandler() {
+    return async (req: any, res: any) => {
+      try {
+        if (req.method !== 'POST') {
+          return res.status(405).json({ error: 'Method not allowed' });
+        }
+
+        const response = await this.processTokenRequest(req.body);
+        res.status(200).json(response);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        res.status(400).json({ error: message });
+      }
+    };
+  }
+
+  /**
+   * Create a handler for Fastify
+   */
+  createFastifyHandler() {
+    return async (request: any, reply: any) => {
+      try {
+        const response = await this.processTokenRequest(request.body);
+        return reply.send(response);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return reply.code(400).send({ error: message });
+      }
+    };
   }
 }
 

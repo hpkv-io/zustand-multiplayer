@@ -65,26 +65,10 @@ const setupTestServer = () => {
       req.on('end', async () => {
         try {
           console.log('Token generation request received:', body);
-          const { storeName } = JSON.parse(body);
-
-          if (!storeName) {
-            console.error('Store name is missing in request');
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Store name is required' }));
-            return;
-          }
-
-          console.log(`Generating token for store: ${storeName}`);
-          console.log(
-            `Using API key: ${process.env.HPKV_API_KEY ? 'Available' : 'MISSING'}, Base URL: ${process.env.HPKV_BASE_URL || 'https://api-eu-1.hpkv.io'}`,
-          );
-
-          // Generate a token using the TokenHelper
-          const token = await tokenHelper.generateTokenForStore(storeName);
-          console.log(`Token generated successfully for ${storeName}`);
-
+          const token = await tokenHelper.processTokenRequest(body);
+          console.log(`Token generated successfully for ${token.storeName}`);
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ token }));
+          res.end(JSON.stringify(token));
         } catch (error) {
           console.error('Error generating token:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });

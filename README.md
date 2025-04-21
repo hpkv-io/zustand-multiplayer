@@ -15,7 +15,7 @@ A real-time synchronization middleware for [Zustand](https://github.com/pmndrs/z
   - [Use Cases](#use-cases)
 - [Usage](#usage)
   - [Creating a multiplayer store](#creating-a-multiplayer-store)
-  - [Setting up the token server](#setting-up-the-token-server)
+  - [Setting up the token generation endpoint](#setting-up-the-token-endpoint)
   - [Persisting state partially](#persisting-state-partially)
   - [Custom state merging with deep objects](#custom-state-merging-with-deep-objects)
   - [Managing connection status](#managing-connection-status)
@@ -155,7 +155,7 @@ const useCounterStore = create(
 
 ### Setting up the token endpoint
 
-You need to create a token generation endpoint that will be called by the middleware. The middleware provides a `TokenHelper` class to make this easier:
+You need to create a token generation endpoint that will be called by the middleware. The middleware provides a `TokenHelper` class to make this easier. There are helper methods to make creating endpoints easier for various frameworks. See the [Token API Documentation](/docs/TOKEN_API.md) for more details.
 
 ```ts
 // Example Express endpoint
@@ -165,18 +165,18 @@ import { TokenHelper } from '@hpkv/zustand-multiplayer'
 const app = express()
 app.use(express.json())
 
-const tokenHelper = new TokenHelper(
+app.post('/token', async (req, res) => {
+  const { storeName } = req.body
+
+  const tokenHelper = new TokenHelper(
   process.env.HPKV_API_KEY,
   process.env.HPKV_API_BASE_URL
 )
-
-app.post('/token', async (req, res) => {
-  const { storeName } = req.body
   
   try {
     const token = await tokenHelper.generateTokenForStore(storeName)
     
-    res.json({ token })
+    res.json({ storeName, token })
   } catch (error) {
     console.error('Token generation error:', error)
     res.status(500).json({ error: 'Failed to generate token' })
