@@ -7,8 +7,7 @@ import {
   HPKVSubscriptionClient,
 } from '@hpkv/websocket-client';
 import type { StateCreator, StoreApi } from 'zustand';
-import { type StateStorage, type PersistStorage } from 'zustand/middleware';
-
+import { type PersistStorage, type StateStorage } from 'zustand/middleware';
 import { logger } from './logger';
 
 /**
@@ -36,6 +35,10 @@ export interface HPKVStorageOptions {
 
 // Client cache to avoid creating multiple clients for the same store
 const clientCache = new Map<string, HPKVSubscriptionClient>();
+// Promise cache to avoid multiple simultaneous client creation attempts
+const clientPromiseCache = new Map<string, Promise<HPKVSubscriptionClient>>();
+// Token promise cache to avoid multiple simultaneous token requests
+const tokenPromiseCache = new Map<string, Promise<string>>();
 
 /**
  * Debug logging utility that only logs when debug is enabled
@@ -54,7 +57,7 @@ function throttle<T extends (...args: Parameters<T>) => Promise<ReturnType<T> | 
   delay: number,
 ): (...args: Parameters<T>) => Promise<ReturnType<T> | void> {
   let lastCall = 0;
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   let lastPromise: Promise<ReturnType<T> | void> | null = null;
 
   return (...args: Parameters<T>): Promise<ReturnType<T> | void> => {
@@ -91,9 +94,17 @@ function throttle<T extends (...args: Parameters<T>) => Promise<ReturnType<T> | 
 async function getToken(
   url: string,
   storeName: string,
-  options: RetryOptions = { retries: 3, retryDelay: 100 },
+  options: RetryOptions = { retries: 1, retryDelay: 100 },
 ): Promise<string> {
-  return retryOperation(async () => {
+  const tokenCacheKey = `${url}:${storeName}`;
+
+  // Check if there's already a pending token request
+  const pendingTokenPromise = tokenPromiseCache.get(tokenCacheKey);
+  if (pendingTokenPromise) {
+    return pendingTokenPromise;
+  }
+
+  const tokenPromise = retryOperation(async () => {
     try {
       // Fetch token from the token generation URL
       const response = await fetch(url, {
@@ -115,6 +126,18 @@ async function getToken(
       throw error;
     }
   }, options);
+
+  // Store the token promise in cache
+  tokenPromiseCache.set(tokenCacheKey, tokenPromise);
+
+  // Clean up the promise cache after resolution
+  tokenPromise.finally(() => {
+    if (tokenPromiseCache.get(tokenCacheKey) === tokenPromise) {
+      tokenPromiseCache.delete(tokenCacheKey);
+    }
+  });
+
+  return tokenPromise;
 }
 
 interface RetryOptions {
@@ -127,7 +150,7 @@ interface RetryOptions {
  */
 async function retryOperation<T>(
   operation: () => Promise<T>,
-  options: RetryOptions = { retries: 3, retryDelay: 100 },
+  options: RetryOptions = { retries: 1, retryDelay: 100 },
 ): Promise<T> {
   let lastError: unknown;
 
@@ -179,35 +202,56 @@ export function createHPKVStorage(
         return cachedClient;
       }
 
-      // Fetch token
-      const token = await getToken(options.tokenGenerationUrl, storeName, {
-        retries: options.maxRetries || 3,
-        retryDelay: options.retryDelay || 100,
-      });
-
-      // Create a new client
-      client = HPKVClientFactory.createSubscriptionClient(token, options.apiBaseUrl);
-
-      // Store in cache
-      clientCache.set(cacheKey, client);
-      client.on('connected', () => {
-        debugLog(debug, 'Successfully connected to HPKV WebSocket');
-      });
-      await client.connect();
-
-      if (rehydrateCallback && !hasSubscribed) {
-        // Subscribe to changes in the store
-        client.subscribe(() => {
-          debugLog(debug, 'Received update for store', storeName);
-          rehydrateCallback();
-        });
-        hasSubscribed = true;
+      // Check if there's already a pending promise for this client
+      const pendingPromise = clientPromiseCache.get(cacheKey);
+      if (pendingPromise) {
+        return pendingPromise;
       }
 
-      // Reset token retry counter on successful connection
-      tokenRetryAttempt = 0;
+      // Create a new promise for client creation
+      const clientPromise = (async () => {
+        // Fetch token
+        const token = await getToken(options.tokenGenerationUrl, storeName, {
+          retries: options.maxRetries || 3,
+          retryDelay: options.retryDelay || 100,
+        });
 
-      return client;
+        // Create a new client
+        client = HPKVClientFactory.createSubscriptionClient(token, options.apiBaseUrl);
+
+        // Store in cache
+        clientCache.set(cacheKey, client);
+        client.on('connected', () => {
+          debugLog(debug, 'Successfully connected to HPKV WebSocket');
+        });
+        await client.connect();
+
+        if (rehydrateCallback && !hasSubscribed) {
+          // Subscribe to changes in the store
+          client.subscribe(() => {
+            debugLog(debug, 'Received update for store', storeName);
+            rehydrateCallback();
+          });
+          hasSubscribed = true;
+        }
+
+        // Reset token retry counter on successful connection
+        tokenRetryAttempt = 0;
+
+        return client;
+      })();
+
+      // Store the promise in the cache
+      clientPromiseCache.set(cacheKey, clientPromise);
+
+      // Clean up promise cache after resolution (success or failure)
+      clientPromise.finally(() => {
+        if (clientPromiseCache.get(cacheKey) === clientPromise) {
+          clientPromiseCache.delete(cacheKey);
+        }
+      });
+
+      return clientPromise;
     } catch (error) {
       logger.error('Connection error:', error);
 
@@ -215,10 +259,12 @@ export function createHPKVStorage(
       if (tokenRetryAttempt < 1) {
         tokenRetryAttempt++;
         clientCache.delete(cacheKey);
+        clientPromiseCache.delete(cacheKey);
         return getOrCreateClient();
       }
 
       clientCache.delete(cacheKey);
+      clientPromiseCache.delete(cacheKey);
       throw error;
     }
   }
@@ -248,7 +294,10 @@ export function createHPKVStorage(
               return null;
             }
           },
-          { retries: options.maxRetries || 3, retryDelay: options.retryDelay || 100 },
+          {
+            retries: options.maxRetries || 3,
+            retryDelay: options.retryDelay || 100,
+          },
         );
       } catch (error: unknown) {
         if (error instanceof HPKVError && 'code' in error && error.code === 404) {
@@ -331,7 +380,10 @@ export function createHPKVStorage(
 
             await currentClient.set(name, parsedValue, true);
           },
-          { retries: options.maxRetries || 3, retryDelay: options.retryDelay || 100 },
+          {
+            retries: options.maxRetries || 3,
+            retryDelay: options.retryDelay || 100,
+          },
         );
       } catch (error) {
         logger.error('Failed to set item:', error);
@@ -345,7 +397,10 @@ export function createHPKVStorage(
             const currentClient = await getOrCreateClient();
             await currentClient.delete(name);
           },
-          { retries: options.maxRetries || 3, retryDelay: options.retryDelay || 100 },
+          {
+            retries: options.maxRetries || 3,
+            retryDelay: options.retryDelay || 100,
+          },
         );
       } catch (error: unknown) {
         if (error instanceof HPKVError && 'code' in error && error.code === 404) {
@@ -680,7 +735,7 @@ function multiplayerImpl<T>(
     ) => {
       savedSetState(
         partial as StateWithMultiplayer<T> | Partial<StateWithMultiplayer<T>>,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         replace as any,
       );
       void throttledSaveState(get());

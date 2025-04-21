@@ -519,7 +519,11 @@ describe('multiplayer middleware', () => {
 
     // Setup a store to prepare initial data
     const setupStore = create<
-      StateWithMultiplayer<{ count: number; initialized: boolean; increment: () => void }>
+      StateWithMultiplayer<{
+        count: number;
+        initialized: boolean;
+        increment: () => void;
+      }>
     >()(
       multiplayer(
         set => ({
