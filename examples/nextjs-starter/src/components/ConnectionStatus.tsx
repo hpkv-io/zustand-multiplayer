@@ -6,18 +6,18 @@ import styles from './ConnectionStatus.module.css';
 
 const ConnectionStatus: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
-  const { multiplayer } = useTodoStore();
+  const multiplayer = useTodoStore.multiplayer;
 
   useEffect(() => {
     // Check status immediately on mount
     if (multiplayer) {
-      setIsConnected(multiplayer.isConnected());
+      setIsConnected(multiplayer.getConnectionStatus()?.isConnected || false);
     }
 
     // Setup polling to check connection status periodically
     const checkConnectionInterval = setInterval(() => {
       if (multiplayer) {
-        setIsConnected(multiplayer.isConnected());
+        setIsConnected(multiplayer.getConnectionStatus()?.isConnected || false);
       }
     }, 1000); // Check every second
 

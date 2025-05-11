@@ -1,11 +1,3 @@
-export { TokenHelper } from './token-helper';
-export { logger, setLogger, LoggerInterface } from './logger';
-export {
-  multiplayer,
-  StateWithMultiplayer,
-  HPKVStorageOptions,
-  MultiplayerApi,
-  MultiplayerOptions,
-  StorageValue,
-} from './multi-player';
-export type { TokenRequest, TokenResponse } from './types/token-api';
+export { TokenHelper, TokenRequest, TokenResponse } from './token-helper';
+export { multiplayer, MultiplayerOptions } from './multiplayer';
+export { createHPKVStorage, HPKVStorage } from './hpkvStorage';
