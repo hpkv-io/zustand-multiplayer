@@ -1,12 +1,32 @@
-import { HPKVClientFactory, WebsocketTokenManager, HPKVApiClient } from '@hpkv/websocket-client';
-import { TokenRequest, TokenResponse } from './types/token-api';
+import { HPKVApiClient, HPKVClientFactory, WebsocketTokenManager } from '@hpkv/websocket-client';
+
+/**
+ * Request format for token generation endpoint
+ */
+export interface TokenRequest {
+  /** Store name to generate token for */
+  namespace: string;
+  /** Keys to subscribe to */
+  subscribedKeys: string[];
+}
+
+/**
+ * Response format from token generation endpoint
+ */
+export interface TokenResponse {
+  /** The namespace the token is for */
+  namespace: string;
+  /** The generated WebSocket token */
+  token: string;
+}
 
 /**
  * Utility to help generate WebSocket tokens for HPKV
  */
 export class TokenHelper {
-  private apiClient: HPKVApiClient;
   private tokenManager: WebsocketTokenManager;
+  private apiKey: string;
+  private baseUrl: string;
 
   /**
    * Creates a new TokenHelper instance
@@ -15,8 +35,9 @@ export class TokenHelper {
    * @param baseUrl HPKV base URL
    */
   constructor(apiKey: string, baseUrl: string) {
-    this.apiClient = HPKVClientFactory.createApiClient(apiKey, baseUrl);
     this.tokenManager = new WebsocketTokenManager(apiKey, baseUrl);
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
   }
 
   /**
@@ -25,28 +46,31 @@ export class TokenHelper {
    * @param storeName The name of the store (used as key in HPKV)
    * @returns A WebSocket token
    */
-  async generateTokenForStore(storeName: string): Promise<string> {
+  async generateTokenForStore(namespace: string, subscribedKeys: string[]): Promise<string> {
+    let apiClient: HPKVApiClient | null = null;
     try {
-      await this.apiClient.connect();
+      apiClient = HPKVClientFactory.createApiClient(this.apiKey, this.baseUrl);
+      await apiClient.connect();
       // Check if the store exists, create it if not
-      const result = await this.apiClient.get(storeName).catch(() => null);
-      if (!result?.key || result.key !== storeName) {
-        await this.apiClient.set(storeName, {});
+      for (const key of subscribedKeys) {
+        const result = await apiClient.get(key).catch(() => null);
+        if (!result?.key || result.key !== key) {
+          await apiClient.set(key, { value: '' });
+        }
       }
-
       // Generate token with access limited to this store key
       const token = await this.tokenManager.generateToken({
-        subscribeKeys: [storeName],
-        accessPattern: `^${escapeRegExp(storeName)}$`,
+        subscribeKeys: subscribedKeys,
+        accessPattern: `^${escapeRegExp(namespace)}:.*$`,
       });
 
       return token;
     } catch (error) {
-      throw new Error(`Failed to generate token for store ${storeName}: ${error}`);
+      throw new Error(`Failed to generate token for namespace ${namespace}: ${error}`);
     } finally {
-      if (this.apiClient && this.apiClient.getConnectionStats().isConnected) {
-        await this.apiClient.disconnect();
-        this.apiClient.destroy();
+      if (apiClient && apiClient.getConnectionStats().isConnected) {
+        await apiClient.disconnect();
+        apiClient.destroy();
       }
     }
   }
@@ -74,17 +98,17 @@ export class TokenHelper {
       }
 
       // Validate the request
-      const { storeName } = parsedRequest;
+      const { namespace, subscribedKeys } = parsedRequest;
 
-      if (!storeName || typeof storeName !== 'string') {
-        throw new Error('Invalid request: storeName is required and must be a string');
+      if (!namespace || typeof namespace !== 'string') {
+        throw new Error('Invalid request: namespace is required and must be a string');
       }
 
       // Generate the token
-      const token = await this.generateTokenForStore(storeName);
+      const token = await this.generateTokenForStore(namespace, subscribedKeys || []);
 
       // Return the response
-      return { storeName, token };
+      return { namespace, token };
     } catch (error) {
       throw error instanceof Error ? error : new Error('Unknown error during token generation');
     }

@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future fixes will be listed here
 
+## [0.2.0-alpha] - 2025-05-11
+
+### Changed
+
+- API Changes
+
+### Added
+
+- Subscription and Publish Management Options
+
 ## [0.1.3-alpha] - 2025-04-21
 
 ### Changed
@@ -59,8 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.3-alpha...HEAD
-[0.1.3-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.1-alpha...v0.1.3-alpha
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.2.0-alpha...HEAD
+[0.2.0-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.3-alpha...v0.2.0-alpha
+[0.1.3-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.2-alpha...v0.1.3-alpha
 [0.1.2-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.1-alpha...v0.1.2-alpha
 [0.1.1-alpha]: https://github.com/hpkv-io/zustand-multiplayer/releases/tag/v0.1.1-alpha
 [0.1.0-alpha.9]: https://github.com/hpkv-io/zustand-multiplayer/releases/tag/v0.1.0-alpha.9

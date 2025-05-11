@@ -6,39 +6,39 @@
 A real-time synchronization middleware for [Zustand](https://github.com/pmndrs/zustand) that uses [HPKV](https://hpkv.io)'s [WebSocket API](https://hpkv.io/docs/websocket-api) for storage and real-time updates across clients.
 
 ## Table of Contents
-
+- [Introduction](#introduction)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Introduction](#introduction)
-  - [How It Works](#how-it-works)
-  - [Use Cases](#use-cases)
 - [Usage](#usage)
-  - [Creating a multiplayer store](#creating-a-multiplayer-store)
-  - [Setting up the token generation endpoint](#setting-up-the-token-endpoint)
-  - [Persisting state partially](#persisting-state-partially)
-  - [Custom state merging with deep objects](#custom-state-merging-with-deep-objects)
-  - [Managing connection status](#managing-connection-status)
-  - [Error handling and retries](#error-handling-and-retries)
-  - [Migration between versions](#migration-between-versions)
-- [Troubleshooting](#troubleshooting)
-  - [Common issues](#common-issues)
-  - [Debug mode](#debug-mode)
-- [API Reference](#api-reference)
-  - [Types](#types)
-  - [multiplayer(stateCreatorFn, options)](#multiplayerstateccreatorfn-options)
+  - [1. Basic Setup](#1-basic-setup)
+    - [Client-Side Store Example](#client-side-store-example)
+    - [Server-Side Store Example](#server-side-store-example)
+  - [2. Setting up the Token Generation Endpoint (for Client-Side Stores)](#2-setting-up-the-token-generation-endpoint-for-client-side-stores)
+  - [3. Fine-Grained State Synchronization](#3-fine-grained-state-synchronization)
+    - [Selecting Changes to Publish (`publishUpdatesFor`)](#selecting-changes-to-publish-publishupdatesfor)
+    - [Selecting Changes to Subscribe (`subscribeToUpdatesFor`)](#selecting-changes-to-subscribe-subscribeupdatesfor)
+  - [4. API Reference](#4-api-reference)
+    - [Zustand API](#zustand-api)
+    - [Multiplayer API](#multiplayer-api)
+- [Managing Connection Status](#managing-connection-status)
+- [How It Works](#how-it-works)
 - [License](#license)
+
+## Introduction
+
+The `multiplayer` middleware extends [Zustand](https://github.com/pmndrs/zustand) with powerful real-time synchronization capabilities, enabling seamless state sharing across multiple clients. While Zustand excels at managing local state, this middleware bridges the gap to distributed state management by leveraging [HPKV](https://hpkv.io)'s [WebSocket API](https://hpkv.io/docs/websocket-api). It's designed to be flexible, allowing developers to control exactly what state is shared and how.
 
 ## Features
 
-- **Real-time state synchronization** between multiple clients
-- **Persistent state storage** using HPKV WebSocket API
-- **Support for versioning and migrations**
-- **Connection status management** with automatic reconnection
-- **Throttling** to optimize network traffic
-- **TypeScript support** with full type definitions
-- **Custom merge strategies** for combining remote and local state
-- **Partial state persistence** with the partialize option
+- **Real-time state synchronization** between multiple clients.
+- **Persistent state storage** using HPKV WebSocket API.
+- **Selective state synchronization**: Control which parts of the state are published and subscribed to.
+- **Server-side and Client-side support**:
+    - Use `apiKey` for server-side instances.
+    - Use `tokenGenerationUrl` for client-side instances to securely fetch tokens.
+- **Automatic reconnection** and connection status management (provided by underlying `@hpkv/websocket-client`).
+- **TypeScript support** with full type definitions.
 
 ## Prerequisites
 
@@ -54,502 +54,311 @@ You can find both your API key and base URL in the [HPKV Dashboard API Keys sect
 npm install @hpkv/zustand-multiplayer
 ```
 
-## Introduction
-
-The `multiplayer` middleware extends [Zustand](https://github.com/pmndrs/zustand) with powerful real-time synchronization capabilities, enabling seamless state sharing across multiple clients. While Zustand excels at managing local state, this middleware bridges the gap to distributed state management by leveraging [HPKV](https://hpkv.io)'s WebSocket API.
-
-### How It Works
-
-At its core, the middleware:
-
-1. **Automatically synchronizes state changes** across all connected clients in real-time
-2. **Persists state** to HPKV's high-performance storage
-3. **Rehydrates state** when clients reconnect or when the page loads
-4. **Handles connection management**, including reconnection attempts and error handling
-5. **Provides APIs** for monitoring connection status and controlling synchronization
-
-The implementation is built on a client-server architecture where:
-- Each client connects to HPKV via WebSockets using secure tokens
-- State changes are automatically propagated to all connected clients
-- The server acts as both a persistence layer and a real-time message broker
-
-Basic usage is straightforward:
-
-```js
-const nextStateCreatorFn = multiplayer(stateCreatorFn, multiplayerOptions)
-```
-
-### Use Cases
-
-This middleware is ideal for a wide range of applications:
-
-#### 1. Collaborative Tools
-- **Document editors**: Multiple users editing the same document simultaneously
-- **Whiteboards**: Shared drawing and diagramming with real-time updates
-- **Project management**: Task boards with real-time updates across team members
-
-#### 2. Multi-device Experiences
-- **Cross-device applications**: Seamlessly continue work across phone, tablet, and desktop
-- **Shared shopping carts**: Synchronized shopping experience across devices
-- **Settings synchronization**: Keep user preferences consistent across all devices
-
-#### 3. Real-time Applications
-- **Chat applications**: Instant messaging with presence indicators
-- **Live dashboards**: Data visualization that updates in real-time for all viewers
-- **Multiplayer games**: Synchronized game state across players
-
 ## Usage
 
-### Creating a multiplayer store
+Here's how to integrate and use the `zustand-multiplayer` middleware.
 
-#### TypeScript Example
-```ts
-import { create } from 'zustand'
-import { multiplayer, StateWithMultiplayer } from '@hpkv/zustand-multiplayer'
+### 1. Basic Setup
 
-// Define your store type
-type CounterStore = {
-  count: number
-  increment: () => void
-  decrement: () => void
-}
-
-// Create a store with multiplayer middleware
-const useCounterStore = create<StateWithMultiplayer<CounterStore>>()(
-  multiplayer(
-    (set) => ({
-      count: 0,
-      increment: () => set((state) => ({ count: state.count + 1 })),
-      decrement: () => set((state) => ({ count: state.count - 1 })),
-    }),
-    {
-      name: 'counter-store',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-    }
-  )
-)
+First, install the middleware:
+```bash
+npm install @hpkv/zustand-multiplayer zustand
+# or
+yarn add @hpkv/zustand-multiplayer zustand
 ```
 
-#### JavaScript Example
-```js
-import { create } from 'zustand'
-import { multiplayer } from '@hpkv/zustand-multiplayer'
+#### Client-Side Store Example
 
-// Create a store with multiplayer middleware
-const useCounterStore = create(
-  multiplayer(
-    (set) => ({
-      count: 0,
-      increment: () => set((state) => ({ count: state.count + 1 })),
-      decrement: () => set((state) => ({ count: state.count - 1 })),
-    }),
-    {
-      name: 'counter-store',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-    }
-  )
-)
-```
+This is the most common scenario for UIs (e.g., React, Vue, Svelte applications).
 
-### Setting up the token endpoint
-
-You need to create a token generation endpoint that will be called by the middleware. The middleware provides a `TokenHelper` class to make this easier. There are helper methods to make creating endpoints easier for various frameworks. See the [Token API Documentation](/docs/TOKEN_API.md) for more details.
-
-```ts
-// Example Express endpoint
-import express from 'express'
-import { TokenHelper } from '@hpkv/zustand-multiplayer'
-
-const app = express()
-app.use(express.json())
-
-app.post('/token', async (req, res) => {
-  const { storeName } = req.body
-
-  const tokenHelper = new TokenHelper(
-  process.env.HPKV_API_KEY,
-  process.env.HPKV_API_BASE_URL
-)
-  
-  try {
-    const token = await tokenHelper.generateTokenForStore(storeName)
-    
-    res.json({ storeName, token })
-  } catch (error) {
-    console.error('Token generation error:', error)
-    res.status(500).json({ error: 'Failed to generate token' })
-  }
-})
-
-app.listen(3000)
-```
-
-### Persisting state partially
-
-Sometimes you might want to persist only specific parts of your state. An example is the situations that you want part of the state to be shared across all clients and part of it to be specific to a client.
-
-#### Real-world use cases:
-
-1. **User sessions with shared data**: In a collaborative document editor, you might want to sync the document content across all clients but keep each user's selection, cursor position, and UI preferences local.
-
-2. **Multi-player games**: Sync the game state (positions, scores) while keeping client-specific data (input buffers, local settings) separate.
-
-3. **Form applications**: Sync form data but keep validation states, loading indicators, and temporary user actions local.
-
-You can use the `partialize` option to specify exactly which parts of the state should be shared:
-
-```ts
-const useEditorStore = create<StateWithMultiplayer<EditorState>>()(
-  multiplayer(
-    (set) => ({
-      // Shared state
-      document: { 
-        content: "",
-        lastModified: null,
-        version: 1
-      },
-      // Client-specific state
-      ui: { 
-        selectedText: "", 
-        cursorPosition: { line: 0, column: 0 },
-        sidebarOpen: false 
-      },
-      isLoading: false,
-      
-      // Actions...
-      updateContent: (content) => set(state => ({ 
-        document: { 
-          ...state.document, 
-          content,
-          lastModified: new Date()
-        }
-      })),
-    }),
-    {
-      name: 'collaborative-editor',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      // Only sync the document part, not UI state or loading indicators
-      partialize: (state) => ({
-        document: state.document
-      }),
-    }
-  )
-)
-```
-
-With this setup, when any client calls `updateContent()`, only the document data will be synchronized across all clients, while each client maintains its own UI state. This reduces network traffic and prevents unnecessary UI updates across clients.
-
-### Custom state merging with deep objects
-
-When working with deeply nested state objects, the default shallow merge strategy might not be sufficient. Deep merging becomes essential when you need to preserve nested structures while updating only specific parts.
-
-#### Real-world use cases:
-
-1. **User preferences with multiple categories**: An application with extensive user settings grouped into categories (appearance, privacy, notifications, etc.) that need to be merged properly.
-
-2. **Complex application configurations**: Apps with layered configurations where different clients might update different sections of the config, requiring proper merging.
-
-3. **Dashboard layouts**: Apps with customizable dashboards where widgets can be arranged and configured independently.
-
-```ts
-import { create } from 'zustand'
-import { multiplayer, StateWithMultiplayer } from '@hpkv/zustand-multiplayer'
-import createDeepMerge from '@fastify/deepmerge'
-
-// Create a deep merge utility
-const deepMerge = createDeepMerge({ all: true })
-
-// Define your state type with nested structures
-type AppSettings = {
-  config: {
-    appearance: { 
-      theme: 'light' | 'dark' | 'system',
-      fontSize: number,
-      accentColor: string,
-      animations: boolean
-    },
-    privacy: { 
-      shareUsageData: boolean,
-      storeHistory: boolean,
-      cookiePreferences: {
-        analytics: boolean,
-        marketing: boolean,
-        necessary: boolean
-      }
-    },
-    notifications: {
-      email: boolean,
-      push: boolean,
-      frequency: 'immediate' | 'daily' | 'weekly'
-    }
-  },
-  updateAppearance: (appearance: Partial<AppSettings['config']['appearance']>) => void
-}
-
-const useSettingsStore = create<StateWithMultiplayer<AppSettings>>()(
-  multiplayer(
-    (set) => ({
-      // Deeply nested initial state
-      config: {
-        appearance: { 
-          theme: 'light', 
-          fontSize: 14,
-          accentColor: '#3498db',
-          animations: true
-        },
-        privacy: { 
-          shareUsageData: false,
-          storeHistory: true,
-          cookiePreferences: {
-            analytics: false,
-            marketing: false,
-            necessary: true
-          }
-        },
-        notifications: {
-          email: true,
-          push: false,
-          frequency: 'daily'
-        }
-      },
-      
-      // Action to update just a portion of the appearance settings
-      updateAppearance: (appearance) => set(state => ({
-        config: {
-          ...state.config,
-          appearance: {
-            ...state.config.appearance,
-            ...appearance
-          }
-        }
-      }))
-    }),
-    {
-      name: 'app-settings',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      // Custom merge function to properly handle deep objects
-      merge: (persistedState, currentState) => 
-        deepMerge(currentState, persistedState) as AppSettings
-    }
-  )
-)
-```
-
-With this setup, when a user changes their theme on one device, only that part of the deeply nested configuration gets updated across all instances of the application. The `merge` function ensures all levels of nesting are properly combined when state is rehydrated from storage or received from other clients.
-
-This approach is particularly valuable for applications with complex configuration options where different parts of the configuration might be modified independently by different clients.
-
-### Managing connection status
-
-```tsx
-import React, { useState, useEffect } from 'react';
+```typescript
+// src/store.ts
 import { create } from 'zustand';
-import { multiplayer, StateWithMultiplayer } from '@hpkv/zustand-multiplayer';
+import { multiplayer } from '@hpkv/zustand-multiplayer';
 
-// Define your store type
-type CollaborativeStore = {
-  document: {
-    content: string;
-    lastModified: Date | null;
-  };
-  updateContent: (content: string) => void;
-};
+interface MyState {
+  count: number;
+  message: string;
+  increment: () => void;
+  setMessage: (msg: string) => void;
+}
 
-// Create the store with multiplayer
-const useDocStore = create<StateWithMultiplayer<CollaborativeStore>>()(
+export const useMyStore = create<MyState>()(
   multiplayer(
     (set) => ({
-      document: {
-        content: '',
-        lastModified: null,
-      },
-      updateContent: (content) => 
-        set(state => ({ 
-          document: {
-            content,
-            lastModified: new Date(),
-          }
-        })),
+      count: 0,
+      message: '',
+      increment: () => set((state) => ({ count: state.count + 1 })),
+      setMessage: (msg: string) => set({ message: msg }),
     }),
     {
-      name: 'collaborative-doc',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
+      namespace: 'my-app-space', // Unique namespace for this store's data in HPKV
+      apiBaseUrl:'YOUR_HPKV_BASE_URL', // From HPKV Dashboard
+      tokenGenerationUrl: 'YOUR_TOKEN_GENERATION_ENDPOINT', // Your backend endpoint to generate tokens
     }
   )
 );
 
-// Connection status component with automatic reconnection
-function ConnectionStatusBar() {
-  const { multiplayer } = useDocStore();
-  const [isConnected, setIsConnected] = useState(multiplayer?.isConnected() ?? false);
-  
-  // Poll connection status
-  useEffect(() => {
-    if(multiplayer){
-      setIsConnected(multiplayer.isConnected());
-    }
-    
-    // Set up polling interval
-    const interval = setInterval(() => {
-      const connected = multiplayer.isConnected();
-      setIsConnected(connected);
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [multiplayer]);
-  
-  
-  return (
-      <div>
-        {isConnected ? 'Connected' : 'Disconnected'}
-      </div>
-  );
+// To use in a React component:
+// import { useMyStore } from './store';
+// const { count, increment, multiplayer } = useMyStore();
+```
+
+You'll need to set up an API endpoint at `/api/hpkv-token` (see section 2).
+
+#### Server-Side Store Example
+
+This can be useful for Node.js backends or scripts that need to share state.
+
+```typescript
+// server/store.ts
+import { create } from 'zustand';
+import { multiplayer } from '@hpkv/zustand-multiplayer';
+
+interface ServerMetrics {
+  activeConnections: number;
+  requestsPerSecond: number;
+  updateMetrics: (connections: number, rps: number) => void;
 }
 
-```
+// Ensure environment variables are loaded (e.g., using dotenv)
+// process.env.HPKV_API_KEY
+// process.env.HPKV_API_BASE_URL
 
-This implementation provides users with real-time feedback about their connection status, shows when data was last synchronized, and offers a manual reconnection option. This pattern is essential for collaborative applications where users need to know if their changes are being synchronized with other clients.
-
-The connection status component can be extended with additional features like automatic reconnection attempts with exponential backoff, offline mode indicators, or sync progress visualization for large state updates.
-
-### Error handling and retries
-
-The middleware includes built-in error handling and retry logic for network operations:
-
-```ts
-const useStore = create<StateWithMultiplayer<MyState>>()(
+export const serverMetricsStore = create<ServerMetrics>()(
   multiplayer(
     (set) => ({
-      // Your store state
+      activeConnections: 0,
+      requestsPerSecond: 0,
+      updateMetrics: (connections, rps) => set({ activeConnections: connections, requestsPerSecond: rps }),
     }),
     {
-      name: 'resilient-store',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      // Configure retry behavior
-      maxRetries: 5,
-      retryDelay: 300
+      namespace: 'server-metrics-space',
+      apiBaseUrl: process.env.HPKV_API_BASE_URL!, // From HPKV Dashboard
+      apiKey: process.env.HPKV_API_KEY!, // Your HPKV API Key (keep this secret)
     }
   )
-)
+);
+
+// Usage:
+// serverMetricsStore.getState().updateMetrics(100, 50);
+// const metrics = serverMetricsStore.getState();
+// console.log(metrics.activeConnections);
 ```
+**Important**: Never expose your `apiKey` in client-side code.
 
-### Migration between versions
+### 2. Setting up the Token Generation Endpoint (for Client-Side Stores)
 
-When you need to make breaking changes to your store, you can use versioning and migrations:
+For client-side stores, you must provide a `tokenGenerationUrl`. This is an endpoint on your backend that securely generates an HPKV WebSocket token. The `TokenHelper` class assists with this. For more details see [Token API Documentation](./docs/TOKEN_API.md)
 
-```ts
-const useStore = create<StateWithMultiplayer<MyState>>()(
+Here's an example using Next.js API routes:
+
+```typescript
+// pages/api/hpkv-token.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { TokenHelper, TokenRequest, TokenResponse } from '@hpkv/zustand-multiplayer/token-helper'; // Adjust path if necessary
+
+// Ensure these are set in your environment variables
+const HPKV_API_KEY = process.env.HPKV_API_KEY!;
+const HPKV_API_BASE_URL = process.env.HPKV_API_BASE_URL!;
+
+const tokenHelper = new TokenHelper(HPKV_API_KEY, HPKV_API_BASE_URL);
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<TokenResponse | { error: string }>
+) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    // The client will send { namespace: string, subscribedKeys: string[] }
+    // subscribedKeys are the fully-qualified keys (e.g., namespace:key)
+    const tokenRequest = req.body as TokenRequest;
+    const response = await tokenHelper.processTokenRequest(tokenRequest);
+    res.status(200).json(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error during token generation';
+    console.error('Token generation error:', message);
+    res.status(400).json({ error: message });
+  }
+}
+```
+The `token-helper.ts` also provides `createExpressHandler()` and `createFastifyHandler()` for other Node.js frameworks. The client-side `HPKVStorage` will automatically call this endpoint, sending the `namespace` and the keys it intends to subscribe to (derived from `subscribeToUpdatesFor` or default behavior).
+
+### 3. Fine-Grained State Synchronization
+
+By default, the middleware syncs all top-level non-function properties of your state. You can customize this behavior using `publishUpdatesFor` and `subscribeToUpdatesFor` options.
+
+#### Selecting Changes to Publish (`publishUpdatesFor`)
+
+Use `publishUpdatesFor` to specify which parts of the state should be sent to other clients when they change locally.
+
+```typescript
+interface UserProfile {
+  id: string;
+  username: string;
+  email?: string; // Only publish username, not email
+  lastActive: number;
+  theme: 'dark' | 'light';
+  // ... other actions
+}
+
+export const useUserStore = create<UserProfile>()(
   multiplayer(
     (set) => ({
-      user: { name: '', preferences: {} },
+      id: '123',
+      username: 'guest',
+      lastActive: Date.now(),
+      theme: 'light',
+      // ... actions to update state
     }),
     {
-      name: 'versioned-store',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      version: 2, // Current version
-      migrate: (persistedState, version) => {
-        // Migrate from version 1 to 2
-        if (version === 1) {
-          return {
-            user: {
-              name: persistedState.username || '',
-              preferences: persistedState.settings || {},
-            }
-          }
-        }
-        return persistedState as MyState
-      }
+      namespace: 'user-profiles',
+      apiBaseUrl: /* ... */,
+      tokenGenerationUrl: /* ... */,
+      publishUpdatesFor: () => ['username', 'lastActive', 'theme'], // Only these keys are published
     }
   )
-)
+);
 ```
+If `publishUpdatesFor` is not provided, all non-function keys from the initial state are published.
 
-## Troubleshooting
+#### Selecting Changes to Subscribe (`subscribeToUpdatesFor`)
 
-### Common issues
+Use `subscribeToUpdatesFor` to specify which parts of the state this client should listen for updates from other clients.
 
-1. **Missing connection**: Ensure `tokenGenerationUrl` and `apiBaseUrl` are correctly configured.
+```typescript
+interface GameState {
+  score: number;
+  level: number;
+  playerName: string; // This client only cares about score and level updates
+  opponentName?: string;
+  // ... other actions
+}
 
-2. **Token errors**: Verify your token generation endpoint is working correctly and returning valid tokens.
-
-3. **Hydration issues**: If state isn't persisting, check browser console for errors and verify that all required options are provided.
-
-### Debug mode
-
-Enable debug logging to see what's happening under the hood:
-
-```ts
-const useStore = create<StateWithMultiplayer<MyState>>()(
+export const useGameStore = create<GameState>()(
   multiplayer(
-    (set) => ({ /* state */ }),
+    (set) => ({
+      score: 0,
+      level: 1,
+      playerName: 'Player1',
+      // ... actions
+    }),
     {
-      name: 'debug-store',
-      tokenGenerationUrl: 'your-token-generation-endpoint',
-      apiBaseUrl: 'your-hpkv-api-base-url',
-      debug: true // Enable debug logs
+      namespace: 'game-room-1',
+      apiBaseUrl: /* ... */,
+      tokenGenerationUrl: /* ... */,
+      subscribeToUpdatesFor: () => ['score', 'level'], // Only listen for changes to score and level
     }
   )
-)
+);
+```
+If `subscribeToUpdatesFor` is not provided, the client subscribes to updates for all non-function keys from the initial state. The keys provided to `subscribeToUpdatesFor` are used by `HPKVStorage` to request specific keys from the HPKV server during token generation and subscription.
+
+### 4. API Reference
+
+#### Zustand API
+
+All standard Zustand APIs remain available and function as expected for state management:
+
+*   `getState(): TState`: Returns the current state.
+*   `setState(partial, replace?)`: Updates the state. Changes made via `setState` will be broadcast to other clients if the affected keys are published.
+*   `subscribe(listener, selector?, equalityFn?)`: Subscribes to local state changes.
+
+Refer to the [official Zustand documentation](https://github.com/pmndrs/zustand) for more details.
+
+#### Multiplayer API
+
+The middleware adds a `multiplayer` object to your store instance, providing control over the synchronization behavior:
+
+```typescript
+const myStore = useMyStore(); // Assuming useMyStore is your multiplayer-enabled store
+
+// Access the multiplayer API via:
+// myStore.multiplayer.someFunction()
 ```
 
-## API Reference
+Available methods:
 
-### Types
+*   **`getSubscribedState(): Promise<P>`**
+    *   Fetches the current state of all keys this client is subscribed to directly from the HPKV server. `P` is the type of the (potentially partial) state.
+    *   Useful for getting the latest server truth for the subscribed parts of the state.
 
-#### Signature
+*   **`hydrate(): Promise<void>`**
+    *   Manually triggers a full re-fetch and application of the shared state from HPKV for all keys this client is subscribed to. This is called automatically on initialization.
+    *   You might call this if you suspect the local state is out of sync or after re-establishing a connection manually.
 
-```ts
-multiplayer<T>(stateCreatorFn: StateCreator<T, [], []>, options: MultiplayerOptions<T>): StateCreator<StateWithMultiplayer<T>, [], []>
+*   **`clearStorage(): Promise<void>`**
+    *   Removes all items associated with the store's `namespace` from the HPKV server.
+    *   Use with caution, as this affects all clients using the same namespace.
+
+*   **`disconnect(): Promise<void>`**
+    *   Closes the WebSocket connection to HPKV. The underlying client might attempt to reconnect based on its configuration.
+
+*   **`getConnectionStatus(): ConnectionStats | null`**
+    *   Returns an object with details about the current WebSocket connection status (e.g., `isConnected`, `isConnecting`, `serverUri`, `connectionId`, `latency`).
+    *   `ConnectionStats` is imported from `@hpkv/websocket-client`. Returns `null` if the client is not yet initialized.
+
+## Managing Connection Status
+
+The underlying `@hpkv/websocket-client` automatically handles reconnections. You can monitor the connection status using `store.multiplayer.getConnectionStatus()`.
+
+```typescript
+import { useEffect, useState } from 'react';
+import { useMyStore } from './store'; // Your multiplayer store
+import { ConnectionStats } from '@hpkv/websocket-client';
+
+function ConnectionStatusIndicator() {
+  const { getConnectionStatus } = useMyStore().multiplayer;
+  const [status, setStatus] = useState<ConnectionStats | null>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStatus(getConnectionStatus());
+    }, 1000); // Check status periodically
+    return () => clearInterval(interval);
+  }, [getConnectionStatus]);
+
+  if (!status) return <p>Status: Initializing...</p>;
+  if (status.isConnected) return <p>Status: Connected (Latency: {status.latency}ms)</p>;
+  if (status.isConnecting) return <p>Status: Connecting...</p>;
+  return <p>Status: Disconnected</p>;
+}
 ```
 
-#### State with Multiplayer
+This provides a basic way to display connection info. For more advanced scenarios, you might need to delve into the `@hpkv/websocket-client`'s event system if exposed or needed. The current middleware abstracts most of this.
 
-```ts
-type StateWithMultiplayer<T> = T & {
-  multiplayer: MultiplayerApi<T>;
-};
-```
+### How It Works
 
-### multiplayer(stateCreatorFn, options)
+The middleware operates by integrating directly with Zustand's state management and HPKV's real-time messaging and persistence capabilities:
 
-#### Parameters
+1.  **Initialization**:
+    *   When you create a store with the `multiplayer` middleware, it initializes `HPKVStorage` (`src/hpkvStorage.ts`).
+    *   `HPKVStorage` is responsible for all communication with the HPKV backend.
+    *   For client-side stores, it fetches a secure WebSocket token from your `tokenGenerationUrl`. For server-side stores, it uses the provided `apiKey` to generate a token via `TokenHelper` (`src/token-helper.ts`).
+    *   It then establishes a WebSocket connection to HPKV using the `@hpkv/websocket-client` library.
 
-* `stateCreatorFn`: A function that takes `set` function, `get` function and `store` as arguments. Usually, you will return an object with the methods you want to expose.
-* `options`: An object to define storage and synchronization options.
-  * `name`: A unique name for your store (required).
-  * `tokenGenerationUrl`: URL endpoint that generates HPKV tokens (required).
-  * `apiBaseUrl`: Base URL for the HPKV WebSocket API (required).
-  * **optional** `partialize`: A function to filter state fields before persisting.
-  * **optional** `onRehydrateStorage`: A function or function returning a function that allows custom logic before and after state rehydration.
-  * **optional** `version`: A version number for the persisted state.
-  * **optional** `migrate`: A function to migrate persisted state for version mismatches.
-  * **optional** `merge`: A function for custom logic when merging persisted state with the current state.
-  * **optional** `skipHydration`: Defaults to `false`. If `true`, the middleware won't automatically rehydrate the state on initialization.
-  * **optional** `debug`: Enables debug logging when `true`.
-  * **optional** `throttleDelay`: Milliseconds to throttle state updates (default: 100).
-  * **optional** `maxRetries`: Maximum number of retries for operations (default: 3).
-  * **optional** `retryDelay`: Delay between retries in milliseconds (default: 100).
+2.  **State Hydration**:
+    *   Upon connection (or reconnection), the middleware can hydrate the store's state by fetching all relevant data for the configured `namespace` from HPKV.
 
-#### Returns
+3.  **Local State Changes**:
+    *   When you update your Zustand store (e.g., using `set` or action calls), the `multiplayer` middleware intercepts these changes.
+    *   If the changed keys are configured to be published (via `publishUpdatesFor`, or by default all non-function keys), the middleware instructs `HPKVStorage` to send these updates to HPKV. Each key-value pair is typically stored under a unique key within the specified `namespace` (e.g., `yourNamespace:yourStateKey`).
 
-`multiplayer` adds a `multiplayer` property to your store with the following API:
+4.  **Receiving Remote Changes**:
+    *   `HPKVStorage` subscribes to changes within its `namespace` (or specific keys if `subscribeToUpdatesFor` is used) on the HPKV server.
+    *   When another client publishes a change, HPKV pushes this update to all subscribed clients via WebSocket.
+    *   `HPKVStorage` receives the notification, processes it, and triggers an event.
+    *   The `multiplayer` middleware listens for these events and updates the local Zustand store with the new data. A flag (`isUpdatingFromHPKV`) ensures that these updates don't trigger another publish cycle, preventing infinite loops.
 
-* `setOptions(options)`: Update middleware options.
-* `clearStorage()`: Clear the persisted state.
-* `rehydrate()`: Manually trigger state rehydration.
-* `hasHydrated()`: Check if the store has been hydrated.
-* `onHydrate(callback)`: Register a listener for hydration start.
-* `onFinishHydration(callback)`: Register a listener for hydration completion.
-* `getOptions()`: Get current middleware options.
-* `isConnected()`: Get the connection status.
-* `disconnect()`: Manually disconnect from the WebSocket.
+5.  **Selective Sync**:
+    *   The `publishUpdatesFor` option allows you to specify a function that returns an array of state keys. Only changes to these keys will be sent to other clients.
+    *   The `subscribeToUpdatesFor` option allows you to specify a function that returns an array of state keys. The client will only receive updates for these keys from other clients.
+    *   If these options are not provided, the middleware defaults to syncing all top-level non-function properties of your state.
+
+Under the hood, `@hpkv/websocket-client` handles the complexities of WebSocket connections, message framing, and automatic reconnections, while `hpkvStorage.ts` adapts this for key-value storage and pub/sub patterns suitable for Zustand state. `token-helper.ts` provides the necessary mechanisms for secure token generation.
 
 ## License
 

@@ -9,8 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@hpkv/websocket-client": "^1.2.4",
-    "@hpkv/zustand-multiplayer": "^0.1.3-alpha",
+    "@hpkv/websocket-client": "^1.2.10",
+    "@hpkv/zustand-multiplayer": "file:../../hpkv-zustand-multiplayer-0.1.0-alpha.tgz",
     "next": "15.3.0",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
