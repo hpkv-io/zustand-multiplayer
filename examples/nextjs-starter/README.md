@@ -2,6 +2,8 @@
 
 This is a simple collaborative Todo application that demonstrates the use of Zustand's multiplayer middleware for real-time state synchronization across multiple clients.
 
+<video src="./assets/example-todo-nextjs.mov" width="100%" height="480" autoplay loop></video>
+
 ## Features
 
 - Real-time collaborative todo list with shared state across clients
@@ -13,9 +15,8 @@ This is a simple collaborative Todo application that demonstrates the use of Zus
 This example uses:
 
 - **Next.js** for the React framework
-- **Zustand** (v5.0.0) for state management
+- **Zustand** for state management
 - **Zustand Multiplayer Middleware** for real-time state synchronization
-- **HPKV WebSocket Client** (v1.2.3) for the underlying real-time communication
 
 ## Environment Variables
 
@@ -95,7 +96,7 @@ interface TodoState {
 }
 
 // Create the store with multiplayer middleware
-export const useTodoStore = create<StateWithMultiplayer<TodoState>>()(
+export const useTodoStore = create<TodoState>()(
   multiplayer(
     (set) => ({
       todos: [],
@@ -130,7 +131,7 @@ export const useTodoStore = create<StateWithMultiplayer<TodoState>>()(
         })),
     }),
     {
- name: 'todo-store',
+          namespace: 'todo-store',
           tokenGenerationUrl: `${process.env.NEXT_PUBLIC_SERVER_URL}/api/generate-token`,
           apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || "",
     }

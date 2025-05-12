@@ -1,5 +1,6 @@
 {
-  "name": "nextjs-starter",
+  "name": "zustand-multiplayer-nextjs-starter",
+  "description": "Next.js Todo App example for Zustand Multiplayer Middleware",
   "version": "0.1.0",
   "private": true,
   "scripts": {

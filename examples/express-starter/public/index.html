@@ -19,12 +19,17 @@
         li button.delete { background-color: #dc3545; font-size: 0.8em; padding: 5px 10px; }
         li button.delete:hover { background-color: #c82333; }
         .status { margin-top: 20px; padding: 10px; background-color: #e9ecef; border-radius: 4px; text-align: center; }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Todo List</h1>
-        <div>
+        <div class="top-bar">
             <input type="text" id="todo-input" placeholder="Add a new todo">
             <button id="add-todo-btn">Add Todo</button>
         </div>

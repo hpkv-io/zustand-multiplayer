@@ -148,9 +148,9 @@ The project is organized as follows:
 
 - `src/` - Source code
   - `index.ts` - Main entry point
-  - `multi-player.ts` - Core multiplayer middleware implementation
+  - `multiplayer.ts` - Core multiplayer middleware implementation
   - `token-helper.ts` - Helper for token generation
-  - `logger.ts` - Logging utilities
+  - `hpkvStorage.ts` - HPKV Storage
 - `tests/` - Test files
 - `examples/` - Example applications using the middleware
 - `.github/workflows/` - CI/CD configuration

@@ -1,7 +1,7 @@
 {
   "name": "zustand-multiplayer-express-starter",
   "version": "1.0.0",
-  "description": "Express.js example for Zustand Multiplayer Middleware",
+  "description": "Express.js Todo App example for Zustand Multiplayer Middleware",
   "main": "app.js",
   "scripts": {
     "start": "node ./bin/www",

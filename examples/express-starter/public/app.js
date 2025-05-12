@@ -88,7 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             updateConnectionStatus();
-            // multiplayer.hydrate(); // Consider if needed
         }
     });
     updateConnectionStatus(); // Initial status update
@@ -97,7 +96,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (multiplayer) {
         multiplayer.hydrate().then(() => {
             console.log('Store hydrated from server.');
-            // renderTodos(); // Already subscribed, will trigger if hydrate changes state
         }).catch(err => {
             console.error('Error hydrating store:', err);
         });

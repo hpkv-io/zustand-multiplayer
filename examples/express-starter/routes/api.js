@@ -5,9 +5,6 @@ const { TokenHelper } = require('@hpkv/zustand-multiplayer'); // Assuming this p
 const HPKV_API_KEY = process.env.HPKV_API_KEY;
 const HPKV_API_BASE_URL = process.env.HPKV_API_BASE_URL;
 
-// It's generally better to instantiate TokenHelper once, 
-// so if app.js is an option, it could be passed down or app could be passed to a setup function.
-// For simplicity here, and if this is the only place it's used, instantiating here is okay.
 if (!HPKV_API_KEY || !HPKV_API_BASE_URL) {
   console.error('API Routes Error: HPKV_API_KEY and HPKV_API_BASE_URL must be set.');
   // This router will not function correctly, but we avoid crashing the app startup here.
