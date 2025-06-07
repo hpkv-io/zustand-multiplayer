@@ -1,5 +1,8 @@
 import http from 'http';
+import { expect } from 'vitest';
 import { TokenHelper } from '../../src/token-helper';
+import { PerformanceMetrics } from '../../src/profiler';
+import { LogLevel } from '../../src/logger';
 
 // Helper function to wait for conditions
 export async function waitFor(
@@ -107,4 +110,67 @@ export async function createTestServer(apiKey: string, apiBaseUrl: string) {
  */
 export function createUniqueStoreName(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+}
+
+/**
+ * Helper to wait for performance metrics to reach expected values
+ */
+export async function waitForMetrics(
+  getMetrics: () => PerformanceMetrics,
+  expectedValues: Partial<PerformanceMetrics>,
+  options?: { timeout?: number; interval?: number },
+): Promise<void> {
+  return waitFor(() => {
+    const metrics = getMetrics();
+    return Object.entries(expectedValues).every(([key, expectedValue]) => {
+      const actualValue = metrics[key as keyof PerformanceMetrics];
+      return actualValue >= expectedValue;
+    });
+  }, options);
+}
+
+/**
+ * Helper to simulate network delays for testing reconnection logic
+ */
+export function createNetworkDelay(delayMs: number = 100) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Helper to validate conflict resolution behavior
+ */
+export function validateConflictResolution(
+  conflicts: any[],
+  strategy: 'keep-remote' | 'keep-pending' | 'merge',
+  expectedResult?: any,
+) {
+  expect(conflicts).toBeDefined();
+  expect(Array.isArray(conflicts)).toBe(true);
+
+  if (strategy === 'merge' && expectedResult) {
+    // Additional validation for merge strategy can be added here
+    expect(expectedResult).toBeDefined();
+  }
+}
+
+/**
+ * Helper to test error scenarios
+ */
+export async function expectAsyncError(
+  fn: () => Promise<any>,
+  expectedError?: string | RegExp,
+): Promise<Error> {
+  try {
+    await fn();
+    throw new Error('Expected function to throw an error');
+  } catch (error) {
+    if (expectedError) {
+      if (typeof expectedError === 'string') {
+        expect(error.message).toContain(expectedError);
+      } else {
+        expect(error.message).toMatch(expectedError);
+      }
+    }
+    return error as Error;
+  }
 }

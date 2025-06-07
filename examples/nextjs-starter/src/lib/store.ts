@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { multiplayer } from '@hpkv/zustand-multiplayer';
+import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
 
 // Define the Todo interface
 interface Todo {
@@ -17,7 +17,7 @@ interface TodoState {
 }
 
 
-export const useTodoStore = create<TodoState>()(
+export const useTodoStore = create<WithMultiplayer<TodoState>>()(
   multiplayer(
     set => ({
       todos: [],
@@ -42,13 +42,13 @@ export const useTodoStore = create<TodoState>()(
             })),
           removeTodo: (id: string) =>
             set((state: TodoState) => ({
-              todos: state.todos.filter((todo) => todo.id !== id),
+              todos: [...state.todos.filter((todo) => todo.id !== id)],
             })),
         }),
         {
           namespace: 'todo-store',
-          tokenGenerationUrl: `${process.env.NEXT_PUBLIC_SERVER_URL}/api/generate-token`,
-          apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL || "",
+          tokenGenerationUrl: `/api/generate-token`,
+          apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
         }
       )
     );

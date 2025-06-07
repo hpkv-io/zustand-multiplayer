@@ -1,103 +1,142 @@
-// Import the store
-import { useTodoStore } from './scripts/store.js';
+// Global state
+let currentFilter = 'all';
 
-document.addEventListener('DOMContentLoaded', () => {
-    const todoInput = document.getElementById('todo-input');
-    const addTodoBtn = document.getElementById('add-todo-btn');
-    const todoList = document.getElementById('todo-list');
-    const connectionStatusEl = document.getElementById('connection-status');
+// DOM elements
+const todoList = document.getElementById('todo-list');
+const todoForm = document.getElementById('todo-form');
+const todoInput = document.getElementById('todo-input');
+const filterButtons = document.querySelectorAll('.filter-button');
+const connectionStatus = document.getElementById('connection-status');
+const connectionText = document.getElementById('connection-text');
+const statusIndicator = connectionStatus.querySelector('.status-indicator');
 
-    // Destructure methods from the store directly
-    const { getState, subscribe, multiplayer } = useTodoStore;
-    // Actions are part of the state, get them via getState()
-    // const { addTodo, toggleTodo, removeTodo } = getState(); // This would be a one-time get
+// Subscribe to store changes
+todoStore.subscribe((state) => {
+  renderTodos(state.todos);
+  updateConnectionStatus(state.multiplayer);
+});
 
-    function renderTodos() {
-        const { todos } = getState(); // Get current state
-        todoList.innerHTML = ''; // Clear existing todos
-        if (!todos || todos.length === 0) {
-            const emptyItem = document.createElement('li');
-            emptyItem.textContent = 'No todos yet. Add one!';
-            todoList.appendChild(emptyItem);
-            return;
-        }
-        todos.forEach(todo => {
-            const listItem = document.createElement('li');
-            
-            const todoText = document.createElement('span');
-            todoText.textContent = todo.text;
-            if (todo.completed) {
-                todoText.classList.add('completed');
-            }
-            todoText.addEventListener('click', () => {
-                getState().toggleTodo(todo.id); // Call action from current state
-            });
+// Initial render
+const initialState = todoStore.getState();
+renderTodos(initialState.todos);
+updateConnectionStatus(initialState.multiplayer);
 
-            const deleteBtn = document.createElement('button');
-            deleteBtn.textContent = 'Delete';
-            deleteBtn.classList.add('delete');
-            deleteBtn.addEventListener('click', () => {
-                getState().removeTodo(todo.id); // Call action from current state
-            });
+// Event listeners
+todoForm.addEventListener('submit', handleAddTodo);
+filterButtons.forEach(button => {
+  button.addEventListener('click', handleFilterChange);
+});
 
-            listItem.appendChild(todoText);
-            listItem.appendChild(deleteBtn);
-            todoList.appendChild(listItem);
-        });
-    }
 
-    addTodoBtn.addEventListener('click', () => {
-        const text = todoInput.value.trim();
-        if (text) {
-            getState().addTodo(text); // Call action from current state
-            todoInput.value = ''; // Clear input after adding
-        }
-    });
+// Functions
+function handleAddTodo(e) {
+  e.preventDefault();
+  const text = todoInput.value.trim();
+  if (text) {
+    const state = todoStore.getState();
+    state.addTodo(text);
+    todoInput.value = '';
+  }
+}
 
-    todoInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            addTodoBtn.click();
-        }
-    });
+function handleFilterChange(e) {
+  const filter = e.target.dataset.filter;
+  currentFilter = filter;
+  
+  // Update active filter button
+  filterButtons.forEach(btn => btn.classList.remove('filter-active'));
+  e.target.classList.add('filter-active');
+  
+  // Re-render todos with new filter
+  const state = todoStore.getState();
+  renderTodos(state.todos);
+}
 
-    // Subscribe to store changes and re-render
-    // The listener receives the new state and previous state
-    subscribe(renderTodos); // renderTodos will call getState() itself
+function handleToggleTodo(id) {
+  const state = todoStore.getState();
+  state.toggleTodo(id);
+}
 
-    // Initial render
-    renderTodos();
+function handleRemoveTodo(id) {
+  const state = todoStore.getState();
+  state.removeTodo(id);
+}
 
-    // Connection Status
-    function updateConnectionStatus() {
-        if (!multiplayer) {
-            connectionStatusEl.textContent = 'Multiplayer not initialized.';
-            return;
-        }
-        const status = multiplayer.getConnectionStatus();
-        if (!status) {
-            connectionStatusEl.textContent = 'Status: Initializing...';
-        } else if (status.isConnected) {
-            connectionStatusEl.textContent = `Status: Connected`;
-        }else {
-            connectionStatusEl.textContent = 'Status: Disconnected';
-        }
-    }
+function renderTodos(todos) {
+  // Filter todos based on current filter
+  const filteredTodos = todos.filter(todo => {
+    if (currentFilter === 'all') return true;
+    if (currentFilter === 'active') return !todo.completed;
+    if (currentFilter === 'completed') return todo.completed;
+    return true;
+  });
 
-    // Update status periodically and on visibility change
-    setInterval(updateConnectionStatus, 2000);
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            updateConnectionStatus();
-        }
-    });
-    updateConnectionStatus(); // Initial status update
+  // Clear the list
+  todoList.innerHTML = '';
 
-    // Hydrate store from server on load
-    if (multiplayer) {
-        multiplayer.hydrate().then(() => {
-            console.log('Store hydrated from server.');
-        }).catch(err => {
-            console.error('Error hydrating store:', err);
-        });
-    }
-}); 
+  if (filteredTodos.length === 0) {
+    const emptyMessage = document.createElement('li');
+    emptyMessage.className = 'empty-message';
+    emptyMessage.textContent = getEmptyMessage();
+    todoList.appendChild(emptyMessage);
+    return;
+  }
+
+  // Render each todo
+  filteredTodos.forEach(todo => {
+    const todoItem = document.createElement('li');
+    todoItem.className = `todo-item ${todo.completed ? 'completed' : ''}`;
+    
+    todoItem.innerHTML = `
+      <input
+        type="checkbox"
+        ${todo.completed ? 'checked' : ''}
+        class="todo-checkbox"
+        data-id="${todo.id}"
+      />
+      <span class="todo-text">${escapeHtml(todo.text)}</span>
+      <button
+        class="delete-button"
+        data-id="${todo.id}"
+        aria-label="Delete task"
+      >
+        &times;
+      </button>
+    `;
+
+    // Add event listeners
+    const checkbox = todoItem.querySelector('.todo-checkbox');
+    const deleteButton = todoItem.querySelector('.delete-button');
+    
+    checkbox.addEventListener('change', () => handleToggleTodo(todo.id));
+    deleteButton.addEventListener('click', () => handleRemoveTodo(todo.id));
+
+    todoList.appendChild(todoItem);
+  });
+}
+
+function updateConnectionStatus(multiplayer) {
+  if (!multiplayer) return;
+  
+  const isConnected = multiplayer.connectionState === 'CONNECTED';
+  
+  connectionText.textContent = multiplayer.connectionState;
+  statusIndicator.className = `status-indicator ${isConnected ? 'connected' : 'disconnected'}`;
+}
+
+function getEmptyMessage() {
+  switch (currentFilter) {
+    case 'active':
+      return 'No active tasks.';
+    case 'completed':
+      return 'No completed tasks.';
+    default:
+      return 'No tasks yet. Add one below!';
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+} 

@@ -3,54 +3,277 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zustand Multiplayer Express Todos</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
-        h1 { text-align: center; color: #333; }
-        input[type="text"] { width: calc(100% - 90px); padding: 10px; margin-right: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        ul { list-style-type: none; padding: 0; }
-        li { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
-        li:last-child { border-bottom: none; }
-        li span { cursor: pointer; }
-        li span.completed { text-decoration: line-through; color: #aaa; }
-        li button.delete { background-color: #dc3545; font-size: 0.8em; padding: 5px 10px; }
-        li button.delete:hover { background-color: #c82333; }
-        .status { margin-top: 20px; padding: 10px; background-color: #e9ecef; border-radius: 4px; text-align: center; }
-        .top-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-    </style>
+    <title>ToDo App</title>
+    <meta name="description" content="A clean, minimalistic ToDo app with a modern design">
+    <link rel="icon" href="/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Todo List</h1>
-        <div class="top-bar">
-            <input type="text" id="todo-input" placeholder="Add a new todo">
-            <button id="add-todo-btn">Add Todo</button>
+    <div id="root">
+        <div class="todo-app">
+            <h1 class="page-title">Collaborative ToDo App</h1>
+            
+            <!-- Connection Status -->
+            <div id="connection-status" class="connection-status">
+                <div class="status-indicator disconnected"></div>
+                <span id="connection-text">DISCONNECTED</span>
+            </div>
+
+            <div class="todo-card">
+                <!-- Filters -->
+                <div class="filters">
+                    <button class="filter-button filter-active" data-filter="all">All</button>
+                    <button class="filter-button" data-filter="active">Active</button>
+                    <button class="filter-button" data-filter="completed">Completed</button>
+                </div>
+
+                <!-- Todo List -->
+                <ul id="todo-list" class="todo-list">
+                    <li class="empty-message">No tasks yet. Add one below!</li>
+                </ul>
+
+                <!-- Todo Input -->
+                <div class="add-task-section">
+                    <form id="todo-form" class="todo-form">
+                        <input
+                            type="text"
+                            id="todo-input"
+                            placeholder="Add a new task..."
+                            class="todo-input"
+                            autofocus
+                        />
+                        <button type="submit" class="todo-submit">
+                            <span class="plus-icon">+</span>
+                        </button>
+                    </form>
+                </div>
+
+                <div class="powered-badge">
+                    Powered by
+                    <span class="highlight">
+                        <a href="https://zustand.docs.pmnd.rs/">Zustand</a>
+                    </span>
+                    and
+                    <span class="highlight">
+                        <a href="https://hpkv.io">HPKV</a>
+                    </span>
+                    multiplayer middleware
+                </div>
+            </div>
         </div>
-        <ul id="todo-list"></ul>
-        <div id="connection-status" class="status">Status: Initializing...</div>
     </div>
 
-    <!-- Configuration first -->
-    <script src="config.js"></script>
-
-    <!-- Zustand and Multiplayer Middleware (assuming you serve them or use a CDN/bundler) -->
-    <!-- For this example, we'll assume they are bundled or available globally via CDN if not using ES modules directly in browser -->
-    <!-- If using ES modules and store.js is an ES module, type="module" is needed for app.js -->
+    <!-- Load bundled dependencies -->
+    <script src="/dist/bundle.js"></script>
     
-    <!-- Serve store.js from the src directory (adjust path if server serves it differently) -->
-    <!-- For simplicity, server.js is set to serve 'public' not 'src' -->
-    <!-- So, store.js should also be in public, or server needs to handle serving it from src -->
-    <!-- Let's assume we copy or serve store.js into public/scripts for this example -->
+    <!-- Main application script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Check if dependencies are loaded
+            if (!window.ZustandMultiplayer) {
+                console.error('Failed to load Zustand Multiplayer dependencies');
+                document.getElementById('todo-list').innerHTML = '<li class="empty-message">Failed to load dependencies. Please run `npm run build` first.</li>';
+                return;
+            }
 
-    <script src="scripts/store.js" type="module"></script>
-    <script src="app.js" type="module"></script>
+            // Fetch configuration from server
+            let config;
+            try {
+                const configResponse = await fetch('/api/config');
+                config = await configResponse.json();
+            } catch (error) {
+                console.error('Failed to load configuration:', error);
+                document.getElementById('todo-list').innerHTML = '<li class="empty-message">Failed to load configuration. Please check server connection.</li>';
+                return;
+            }
 
+            const { createStore, multiplayer } = window.ZustandMultiplayer;
+            
+            // Global state
+            let currentFilter = 'all';
+
+            // Create the todo store with multiplayer functionality
+            const todoStore = createStore(
+              multiplayer(
+                (set) => ({
+                  todos: [],
+                  
+                  addTodo: (text) => 
+                    set((state) => ({
+                      todos: [
+                        ...state.todos,
+                        {
+                          id: Date.now().toString(),
+                          text,
+                          completed: false,
+                        },
+                      ],
+                    })),
+                    
+                  toggleTodo: (id) =>
+                    set((state) => ({
+                      todos: state.todos.map((todo) =>
+                        todo.id === id
+                          ? { ...todo, completed: !todo.completed }
+                          : todo
+                      ),
+                    })),
+                    
+                  removeTodo: (id) =>
+                    set((state) => ({
+                      todos: state.todos.filter((todo) => todo.id !== id),
+                    })),
+                }),
+                {
+                  namespace: 'todo-store',
+                  tokenGenerationUrl: '/api/generate-token',
+                  apiBaseUrl: config.apiBaseUrl,
+                }
+              )
+            );
+
+            // DOM elements
+            const todoList = document.getElementById('todo-list');
+            const todoForm = document.getElementById('todo-form');
+            const todoInput = document.getElementById('todo-input');
+            const filterButtons = document.querySelectorAll('.filter-button');
+            const connectionStatus = document.getElementById('connection-status');
+            const connectionText = document.getElementById('connection-text');
+            const statusIndicator = connectionStatus.querySelector('.status-indicator');
+
+            // Functions
+            function handleAddTodo(e) {
+              e.preventDefault();
+              const text = todoInput.value.trim();
+              if (text) {
+                const state = todoStore.getState();
+                state.addTodo(text);
+                todoInput.value = '';
+              }
+            }
+
+            function handleFilterChange(e) {
+              const filter = e.target.dataset.filter;
+              currentFilter = filter;
+              
+              // Update active filter button
+              filterButtons.forEach(btn => btn.classList.remove('filter-active'));
+              e.target.classList.add('filter-active');
+              
+              // Re-render todos with new filter
+              const state = todoStore.getState();
+              renderTodos(state.todos);
+            }
+
+            function handleToggleTodo(id) {
+              const state = todoStore.getState();
+              state.toggleTodo(id);
+            }
+
+            function handleRemoveTodo(id) {
+              const state = todoStore.getState();
+              state.removeTodo(id);
+            }
+
+            function renderTodos(todos) {
+              // Filter todos based on current filter
+              const filteredTodos = todos.filter(todo => {
+                if (currentFilter === 'all') return true;
+                if (currentFilter === 'active') return !todo.completed;
+                if (currentFilter === 'completed') return todo.completed;
+                return true;
+              });
+
+              // Clear the list
+              todoList.innerHTML = '';
+
+              if (filteredTodos.length === 0) {
+                const emptyMessage = document.createElement('li');
+                emptyMessage.className = 'empty-message';
+                emptyMessage.textContent = getEmptyMessage();
+                todoList.appendChild(emptyMessage);
+                return;
+              }
+
+              // Render each todo
+              filteredTodos.forEach(todo => {
+                const todoItem = document.createElement('li');
+                todoItem.className = `todo-item ${todo.completed ? 'completed' : ''}`;
+                
+                todoItem.innerHTML = `
+                  <input
+                    type="checkbox"
+                    ${todo.completed ? 'checked' : ''}
+                    class="todo-checkbox"
+                    data-id="${todo.id}"
+                  />
+                  <span class="todo-text">${escapeHtml(todo.text)}</span>
+                  <button
+                    class="delete-button"
+                    data-id="${todo.id}"
+                    aria-label="Delete task"
+                  >
+                    &times;
+                  </button>
+                `;
+
+                // Add event listeners
+                const checkbox = todoItem.querySelector('.todo-checkbox');
+                const deleteButton = todoItem.querySelector('.delete-button');
+                
+                checkbox.addEventListener('change', () => handleToggleTodo(todo.id));
+                deleteButton.addEventListener('click', () => handleRemoveTodo(todo.id));
+
+                todoList.appendChild(todoItem);
+              });
+            }
+
+            function updateConnectionStatus(multiplayer) {
+              if (!multiplayer) return;
+              
+              const isConnected = multiplayer.connectionState === 'CONNECTED';
+              
+              connectionText.textContent = multiplayer.connectionState;
+              statusIndicator.className = `status-indicator ${isConnected ? 'connected' : 'disconnected'}`;
+            }
+
+            function getEmptyMessage() {
+              switch (currentFilter) {
+                case 'active':
+                  return 'No active tasks.';
+                case 'completed':
+                  return 'No completed tasks.';
+                default:
+                  return 'No tasks yet. Add one below!';
+              }
+            }
+
+            function escapeHtml(text) {
+              const div = document.createElement('div');
+              div.textContent = text;
+              return div.innerHTML;
+            }
+
+            // Subscribe to store changes
+            todoStore.subscribe((state) => {
+              renderTodos(state.todos);
+              updateConnectionStatus(state.multiplayer);
+            });
+
+            // Initial render
+            const initialState = todoStore.getState();
+            renderTodos(initialState.todos);
+            updateConnectionStatus(initialState.multiplayer);
+
+            // Event listeners
+            todoForm.addEventListener('submit', handleAddTodo);
+            filterButtons.forEach(button => {
+              button.addEventListener('click', handleFilterChange);
+            });
+            
+            console.log('Todo app initialized successfully with config:', config);
+        });
+    </script>
 </body>
 </html> 

@@ -1,93 +1,90 @@
-# Zustand Multiplayer Todo App - Next.js Example
+# Zustand Multiplayer Next.js Starter
 
-This is a simple collaborative Todo application that demonstrates the use of Zustand's multiplayer middleware for real-time state synchronization across multiple clients.
-
-<video src="./assets/example-todo-nextjs.mov" width="100%" height="480" autoplay loop></video>
+A collaborative Todo application built with Next.js, React, TypeScript, and Zustand Multiplayer Middleware. This example demonstrates how to create a real-time multiplayer application in a modern React framework where multiple users can manage todos together seamlessly.
 
 ## Features
 
-- Real-time collaborative todo list with shared state across clients
-- Add, toggle, and remove todos with instant synchronization
-- Connection status indicator showing real-time connection state
+- **Real-time Collaboration**: Multiple users can add, toggle, and delete todos simultaneously
+- **Responsive Design**: Modern UI with CSS modules
 
-## How It Works
+## Prerequisites
 
-This example uses:
-
-- **Next.js** for the React framework
-- **Zustand** for state management
-- **Zustand Multiplayer Middleware** for real-time state synchronization
-
-## Environment Variables
-
-Before running the application, you need to set up the following environment variables:
-
-```
-# HPKV API credentials
-HPKV_API_KEY=your-api-key-here
-HPKV_API_BASE_URL=your_api_base_url
-
-# Next.js public environment variables
-NEXT_PUBLIC_SERVER_URL=http://localhost:3000
-NEXT_PUBLIC_HPKV_API_BASE_URL=your_api_base_url
-```
-
-You can create a `.env.local` file in the root directory by copying the `.env.example` file:
-
-```bash
-cp .env.example .env.local
-```
-
-Then update the values with your actual HPKV API credentials.
+- Node.js
+- npm or yarn
+- HPKV API credentials (get them from [hpkv.io](https://hpkv.io))
 
 ## Getting Started
 
-1. Install the dependencies:
+### 1. Environment Setup
 
+Create a `.env.local` file in the root directory:
+
+```env
+# HPKV Configuration
+HPKV_API_KEY=your_hpkv_api_key_here
+HPKV_API_BASE_URL=your_hpkv_api_base_url_here
+
+# Public Environment Variables (accessible in browser)
+NEXT_PUBLIC_HPKV_API_BASE_URL=your_hpkv_api_base_url_here
+```
+
+> **Note**: The `NEXT_PUBLIC_` prefix makes the API base URL accessible to client-side code while keeping the API key server-side only.
+
+### 2. Installation
+
+Install dependencies:
 ```bash
 npm install
-# or
-yarn
-# or
-pnpm install
 ```
 
-2. Run the development server:
+### 3. Running the Application
 
+#### Development Mode
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
 ```
 
-3. Open [http://localhost:3000](http://localhost:3000) in multiple browser tabs to test the application.
+#### Production Mode
+```bash
+npm run build
+npm start
+```
 
-## Structure
+The application will be available at `http://localhost:3000`
 
-- `src/lib/store.ts` - Zustand store with multiplayer middleware
-- `src/components/TodoApp.tsx` - Main Todo application component
-- `src/components/TodoInput.tsx` - Component for adding new todos
-- `src/components/TodoList.tsx` - Component for displaying and managing todos
-- `src/components/ConnectionStatus.tsx` - Connection status indicator
-- `src/pages/api/generate-token.ts` - API endpoint for generating tokens
+## How It Works
 
-## Detailed Implementation
+### API Route - Token Generation
 
-### Setting up the Todo Store
-
-The core of the application is in `src/lib/store.ts`, where we define our Todo state types and set up the Zustand store with the multiplayer middleware:
+Next.js API routes provide a secure server-side endpoint for token generation:
 
 ```typescript
-// Define the Todo interface
+// src/pages/api/generate-token.ts
+import { TokenHelper } from '@hpkv/zustand-multiplayer';
+
+export default new TokenHelper(
+  process.env.HPKV_API_KEY!, 
+  process.env.HPKV_API_BASE_URL!
+).createNextApiHandler();
+```
+
+This creates a `/api/generate-token` endpoint that generates authentication tokens securely.
+
+### Store Setup with TypeScript
+
+The Zustand store is configured with full TypeScript support and multiplayer middleware:
+
+```typescript
+// src/lib/store.ts
+import { create } from 'zustand';
+import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
+
 interface Todo {
   id: string;
   text: string;
   completed: boolean;
 }
 
-// Define the store state and actions
 interface TodoState {
   todos: Todo[];
   addTodo: (text: string) => void;
@@ -95,13 +92,10 @@ interface TodoState {
   removeTodo: (id: string) => void;
 }
 
-// Create the store with multiplayer middleware
-export const useTodoStore = create<TodoState>()(
+export const useTodoStore = create<WithMultiplayer<TodoState>>()(
   multiplayer(
-    (set) => ({
+    set => ({
       todos: [],
-      
-      // Add a new todo
       addTodo: (text: string) => 
         set((state: TodoState) => ({
           todos: [
@@ -113,8 +107,6 @@ export const useTodoStore = create<TodoState>()(
             },
           ],
         })),
-        
-      // Toggle a todo's completion status
       toggleTodo: (id: string) =>
         set((state: TodoState) => ({
           todos: state.todos.map((todo) =>
@@ -123,107 +115,113 @@ export const useTodoStore = create<TodoState>()(
               : todo
           ),
         })),
-        
-      // Remove a todo
       removeTodo: (id: string) =>
         set((state: TodoState) => ({
-          todos: state.todos.filter((todo) => todo.id !== id),
+          todos: [...state.todos.filter((todo) => todo.id !== id)],
         })),
     }),
     {
-          namespace: 'todo-store',
-          tokenGenerationUrl: `${process.env.NEXT_PUBLIC_SERVER_URL}/api/generate-token`,
-          apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || "",
+      namespace: 'todo-store',
+      tokenGenerationUrl: `/api/generate-token`,
+      apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
     }
   )
 );
 ```
 
-### Using the Store in Components
+#### Key Points:
+- **TypeScript Integration**: `WithMultiplayer<TodoState>` provides type safety for multiplayer features
+- **Environment Variables**: Uses Next.js environment variable conventions
+- **API Route**: Points to the Next.js API route for token generation
 
-Here's how you can use the store in your React components:
+### Component Architecture
 
-```tsx
-// TodoList.tsx
-import React from 'react';
-import { useTodoStore } from '../lib/store';
-
-interface TodoListProps {
-  filter: 'all' | 'active' | 'completed';
-}
-
-const TodoList: React.FC<TodoListProps> = ({ filter }) => {
-  const todos = useTodoStore(state => state.todos);
-  const toggleTodo = useTodoStore(state => state.toggleTodo);
-  const removeTodo = useTodoStore(state => state.removeTodo);
-
-  // Filter todos based on the selected filter
-  const filteredTodos = todos.filter(todo => {
-    if (filter === 'all') return true;
-    if (filter === 'active') return !todo.completed;
-    if (filter === 'completed') return todo.completed;
-    return true;
-  });
+#### Main App Component
+```typescript
+// src/components/TodoApp.tsx
+const TodoApp: React.FC = () => {
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
 
   return (
-    <ul className="todo-list">
-      {filteredTodos.map(todo => (
-        <li key={todo.id} className={todo.completed ? 'completed' : ''}>
-          <input
-            type="checkbox"
-            checked={todo.completed}
-            onChange={() => toggleTodo(todo.id)}
-          />
-          <span>{todo.text}</span>
-          <button onClick={() => removeTodo(todo.id)}>
-            Delete
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-};
-```
-
-### Connection Status Component
-
-The ConnectionStatus component shows the real-time connection state:
-
-```tsx
-// ConnectionStatus.tsx
-import React, { useEffect, useState } from 'react';
-import { useTodoStore } from '../lib/store';
-
-const ConnectionStatus: React.FC = () => {
-  const [isConnected, setIsConnected] = useState(false);
-  const { multiplayer } = useTodoStore();
-
-  useEffect(() => {
-    // Check status immediately on mount
-    if (multiplayer) {
-      setIsConnected(multiplayer.isConnected());
-    }
-
-    // Setup polling to check connection status periodically
-    const checkConnectionInterval = setInterval(() => {
-      if (multiplayer) {
-        setIsConnected(multiplayer.isConnected());
-      }
-    }, 1000);
-
-    return () => clearInterval(checkConnectionInterval);
-  }, [multiplayer]);
-
-  return (
-    <div className="connection-status">
-      <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
-      <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+    <div className={styles['todo-app']}>
+      <h1>Collaborative ToDo App</h1>
+      <ConnectionStatus />
+      <div className={styles['todo-card']}>
+        {/* Filter buttons */}
+        <TodoList filter={filter} />
+        <TodoInput />
+      </div>
     </div>
   );
 };
 ```
 
+#### Using the Store in Components
+```typescript
+// src/components/TodoList.tsx
+const TodoList: React.FC<TodoListProps> = ({ filter }) => {
+  const todos = useTodoStore(state => state.todos);
+  const toggleTodo = useTodoStore(state => state.toggleTodo);
+  const removeTodo = useTodoStore(state => state.removeTodo);
 
-## License
+  // Component logic...
+};
+```
 
-MIT
+#### Connection Status Monitoring
+```typescript
+// src/components/ConnectionStatus.tsx
+const ConnectionStatus: React.FC = () => {
+  const multiplayer = useTodoStore((state) => state.multiplayer);
+
+  return (
+    <div className={styles['connection-status']}>
+      <div className={`${styles['status-indicator']} ${
+        multiplayer.connectionState === ConnectionState.CONNECTED 
+          ? styles['connected'] 
+          : styles['disconnected']
+      }`} />
+      <span>{multiplayer.connectionState}</span>
+    </div>
+  );
+};
+```
+
+## Testing Multiplayer Functionality
+
+1. Start the development server: `npm run dev`
+2. Open the application in multiple browser tabs or windows
+3. Add, toggle, or delete todos in one tab
+4. Watch as changes appear instantly in all other tabs
+5. Monitor the connection status indicator for real-time feedback
+
+## Project Structure
+
+```
+nextjs-starter/
+├── src/
+│   ├── components/           # React components
+│   │   ├── TodoApp.tsx      # Main app component
+│   │   ├── TodoList.tsx     # Todo list with filtering
+│   │   ├── TodoInput.tsx    # Add new todo input
+│   │   ├── ConnectionStatus.tsx # Connection status indicator
+│   │   └── *.module.css     # Component-specific styles
+│   ├── lib/
+│   │   └── store.ts         # Zustand store with multiplayer
+│   ├── pages/
+│   │   ├── api/
+│   │   │   └── generate-token.ts # Token generation API route
+│   │   ├── index.tsx        # Home page
+│   │   ├── _app.tsx         # Next.js app component
+│   │   └── _document.tsx    # Custom document
+│   └── styles/              # Global styles
+├── package.json             # Dependencies and scripts
+├── tsconfig.json           # TypeScript configuration
+├── next.config.ts          # Next.js configuration
+└── .env.local              # Environment variables
+```
+
+## Next Steps
+
+- Explore the [main documentation](../../README.md) for advanced features
+- Check out other examples in the repository

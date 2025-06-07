@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future fixes will be listed here
 
+## [0.3.0] - 2025-06-07
+
+### Added
+
+- **Conflict Resolution**: Automatic handling of simultaneous edits with configurable resolution strategies
+- **Performance Monitoring**: Built-in metrics to track synchronization performance and connection health
+- **Enhanced Logging**: Configurable log levels for better debugging and monitoring
+- **Selective Synchronization**: Choose which parts of your state to sync across clients
+- **Connection Status Tracking**: Real-time connection state monitoring with automatic reconnection
+
+### Changed
+
+- **Improved Stability**: Better handling of network interruptions and offline scenarios
+- **Enhanced Documentation**: Complete API reference and technical design documentation
+- **Updated Examples**: Refreshed starter applications with improved user experience
+- **Better TypeScript Support**: Enhanced type definitions for improved developer experience
+
+### Fixed
+
+- **State Synchronization**: Resolved issues with rapid state changes and data consistency
+- **Connection Reliability**: Improved reconnection logic and error recovery
+- **Memory Management**: Better cleanup of resources and event listeners
+- **Edge Case Handling**: Fixed issues with special data types and nested object updates
+
 ## [0.2.0-alpha] - 2025-05-11
 
 ### Changed
@@ -69,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.2.0-alpha...HEAD
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.2.0-alpha...v0.3.0
 [0.2.0-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.3-alpha...v0.2.0-alpha
 [0.1.3-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.2-alpha...v0.1.3-alpha
 [0.1.2-alpha]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.1.1-alpha...v0.1.2-alpha
