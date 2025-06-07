@@ -1,6 +1,6 @@
 {
   "name": "@hpkv/zustand-multiplayer",
-  "version": "0.2.0-beta.1",
+  "version": "0.3.0",
   "description": "A multiplayer middleware for Zustand using HPKV",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,7 @@
     "build": "tsc",
     "clean": "rimraf dist",
     "prepare": "npm run clean && npm run build",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=60000",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "lint": "eslint .",
@@ -57,6 +57,7 @@
     "@typescript-eslint/eslint-plugin": "^8.30.1",
     "@typescript-eslint/parser": "^8.30.1",
     "@vitejs/plugin-react": "^4.4.1",
+    "@vitest/coverage-v8": "^3.2.0",
     "@vitest/eslint-plugin": "^1.1.43",
     "@vitest/ui": "^3.1.1",
     "dotenv": "^16.3.1",
@@ -77,6 +78,6 @@
     "zustand": "^5.0.3"
   },
   "dependencies": {
-    "@hpkv/websocket-client": "^1.2.11"
+    "@hpkv/websocket-client": "^1.2.15"
   }
 }

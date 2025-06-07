@@ -10,20 +10,17 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@hpkv/zustand-multiplayer": "^0.2.0-alpha",
+    "@hpkv/zustand-multiplayer": "0.3.0",
     "next": "15.3.0",
-    "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@types/node": "^20",
     "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "15.3.0",
+    "eslint": "^9.28.0",
+    "eslint-config-next": "^15.3.3",
     "typescript": "^5"
   }
 }

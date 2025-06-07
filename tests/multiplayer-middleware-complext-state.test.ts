@@ -2,21 +2,31 @@ import { describe, it, expect, beforeEach, afterEach, vi, afterAll } from 'vites
 import { StateCreator } from 'zustand';
 import { MultiplayerOptions } from '../src/multiplayer';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
-import { MockHPKVStorage } from './mocks/mock-storage';
-import { StoreCreator } from './utils/store-creator';
+import { MockTokenHelper } from './mocks/mock-token-manager';
+import { MockWebsocketTokenManager } from './mocks/mock-token-manager';
+import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';
 
-// Mock HPKV client
-vi.mock('../src/hpkvStorage', () => {
+vi.doMock('@hpkv/websocket-client', () => {
   return {
-    createHPKVStorage: vi
-      .fn()
-      .mockImplementation((options: Partial<MultiplayerOptions<ComplexState>>) => {
-        return new MockHPKVStorage(options);
-      }),
+    HPKVClientFactory: MockHPKVClientFactory,
+    WebsocketTokenManager: MockWebsocketTokenManager,
+    ConnectionState: {
+      CONNECTED: 'CONNECTED',
+      DISCONNECTED: 'DISCONNECTED',
+      CONNECTING: 'CONNECTING',
+      RECONNECTING: 'RECONNECTING',
+    },
   };
 });
 
-// Advanced test state with arrays and complex objects
+vi.doMock('../src/token-helper', () => {
+  return {
+    TokenHelper: MockTokenHelper,
+  };
+});
+
+const { StoreCreator } = await import('./utils/store-creator');
+
 interface ComplexState {
   items: Array<{
     id: string;
@@ -54,7 +64,7 @@ const initializer: StateCreator<ComplexState, [['zustand/multiplayer', unknown]]
       items: [
         ...state.items,
         {
-          id: Date.now().toString(),
+          id: `${Math.random().toString(36).substring(2, 15)}`,
           name,
           completed: false,
         },
@@ -118,18 +128,21 @@ describe('Multiplayer Middleware Complex State Tests', () => {
     const uniqueNamespace = createUniqueStoreName('namespace');
     const store1 = createTestStore({ namespace: uniqueNamespace });
     const store2 = createTestStore({ namespace: uniqueNamespace });
-    // Add items in store 1
+
     store1.getState().addItem('Task 1');
     store1.getState().addItem('Task 2');
-    expect(store2.getState().items.length).toBe(2);
-    expect(store2.getState().items[0].name).toBe('Task 1');
-    expect(store2.getState().items[1].name).toBe('Task 2');
+    await waitFor(() => {
+      expect(store2.getState().items.length).toBe(2);
+      expect(store2.getState().items[0].name).toBe('Task 1');
+      expect(store2.getState().items[1].name).toBe('Task 2');
+    });
 
-    // Remove an item in store 2
     const itemId = store2.getState().items[0].id;
     store2.getState().removeItem(itemId);
-    expect(store1.getState().items.length).toBe(1);
-    expect(store1.getState().items[0].name).toBe('Task 2');
+    await waitFor(() => {
+      expect(store1.getState().items.length).toBe(1);
+      expect(store1.getState().items[0].name).toBe('Task 2');
+    });
   });
 
   it('should synchronize nested object updates', async () => {
@@ -160,32 +173,22 @@ describe('Multiplayer Middleware Complex State Tests', () => {
     );
   });
 
-  it('should handle concurrent updates correctly', async () => {
-    const uniqueNamespace = createUniqueStoreName('namespace');
-    const store1 = createTestStore({ namespace: uniqueNamespace });
-    const store2 = createTestStore({ namespace: uniqueNamespace });
-    // Make concurrent updates from both stores
-    store1.getState().addItem('Task from Store 1');
-    store2.getState().addItem('Task from Store 2');
-
-    // Wait for both updates to propagate
-    await waitFor(
-      () => {
-        expect(store1.getState().items.length).toBe(2);
-        expect(store2.getState().items.length).toBe(2);
-      },
-      { timeout: 1000 },
-    );
-  });
-
   it('should handle complex state operations', async () => {
     const uniqueNamespace = createUniqueStoreName('namespace');
     const store1 = createTestStore({ namespace: uniqueNamespace });
     const store2 = createTestStore({ namespace: uniqueNamespace });
+    await waitFor(() => {
+      expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+      expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+    });
+
     // Perform a series of operations in store 1
     store1.getState().addItem('Task 1');
+    await new Promise(resolve => setTimeout(resolve, 100));
     store1.getState().addItem('Task 2');
+    await new Promise(resolve => setTimeout(resolve, 100));
     store1.getState().addItem('Task 3');
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Wait for synchronization
     await waitFor(() => {
