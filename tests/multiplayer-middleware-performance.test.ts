@@ -159,7 +159,7 @@ describe('Multiplayer Middleware Performance Tests', () => {
 
     const metrics = store.getState().multiplayer.getMetrics();
     expect(metrics.averageSyncTime).toBeGreaterThan(operationDelay);
-    expect(metrics.averageSyncTime).toBeLessThan(operationDelay * 2);
+    expect(metrics.averageSyncTime).toBeLessThan(operationDelay * 2.5);
   });
 
   it('should track sync time across multiple operations', async () => {

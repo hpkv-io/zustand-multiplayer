@@ -179,6 +179,7 @@ describe('Multiplayer Middleware Sync Queue Tests', () => {
       store.getState().setText('during-reconnection');
       store.getState().addItem('reconnection-item');
 
+      await new Promise(resolve => setTimeout(resolve, 100));
       // Wait for reconnection
       await waitFor(
         () => store.getState().multiplayer.connectionState === ConnectionState.CONNECTED,
@@ -187,10 +188,11 @@ describe('Multiplayer Middleware Sync Queue Tests', () => {
       // Create second store to verify changes were synchronized
       const store2 = createTestStore({ namespace: uniqueNamespace });
       await waitFor(() => store2.getState().multiplayer.hasHydrated);
-
-      expect(store2.getState().count).toBe(1);
-      expect(store2.getState().text).toBe('during-reconnection');
-      expect(store2.getState().items).toEqual(['reconnection-item']);
+      await waitFor(() => {
+        expect(store2.getState().count).toBe(1);
+        expect(store2.getState().text).toBe('during-reconnection');
+        expect(store2.getState().items).toEqual(['reconnection-item']);
+      });
     });
 
     it('should handle state changes during slow connection establishment', async () => {

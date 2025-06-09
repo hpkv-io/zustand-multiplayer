@@ -1,8 +1,14 @@
 const { build } = require('esbuild');
+const fs = require('fs');
+const path = require('path');
 
 async function buildClient() {
   try {
     console.log('Building client bundle...');
+    
+    // Ensure the output directory exists
+    const outputDir = path.dirname('public/dist/bundle.js');
+    fs.mkdirSync(outputDir, { recursive: true });
     
     await build({
       entryPoints: ['scripts/client-entry.js'],

@@ -1,6 +1,6 @@
 {
   "name": "@hpkv/zustand-multiplayer",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A multiplayer middleware for Zustand using HPKV",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -78,6 +78,6 @@
     "zustand": "^5.0.3"
   },
   "dependencies": {
-    "@hpkv/websocket-client": "^1.2.15"
+    "@hpkv/websocket-client": "^1.2.16"
   }
 }
