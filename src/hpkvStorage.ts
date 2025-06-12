@@ -768,16 +768,15 @@ class HPKVStorageImpl implements HPKVStorage {
         return Promise.resolve();
       }
       await this.ensureConnection();
-      return this.retryManager.executeWithRetry(async () => {
-        const fullKey = this.getFullKey(key);
-        const valueToStore: StoredValue = {
-          value,
-          clientId: this.clientId,
-          timestamp: Date.now(),
-        };
-        const stringValue = JSON.stringify(valueToStore);
-        await this.client?.set(fullKey, stringValue, true);
-      }, `setItem-${key}`);
+
+      const fullKey = this.getFullKey(key);
+      const valueToStore: StoredValue = {
+        value,
+        clientId: this.clientId,
+        timestamp: Date.now(),
+      };
+      const stringValue = JSON.stringify(valueToStore);
+      await this.client?.set(fullKey, stringValue, true);
     };
 
     return this.operationTracker.trackOperation(operation());
