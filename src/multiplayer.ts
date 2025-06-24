@@ -28,6 +28,8 @@ export interface MultiplayerOptions<TState> {
   profiling?: boolean;
   retryConfig?: RetryConfig;
   clientConfig?: ConnectionConfig;
+  /** Custom key generators for specific fields */
+  keyGenerators?: Partial<Record<keyof TState, (field: string, entryKey: string) => string>>;
 }
 
 export type Write<T, U> = Omit<T, keyof U> & U;
@@ -46,6 +48,8 @@ export interface MultiplayerState {
   destroy: () => Promise<void>;
   getConnectionStatus: () => ConnectionStats | null;
   getMetrics: () => PerformanceMetrics;
+  /** Update state using draft updates for Record fields */
+  updateDraft: <T extends Record<string, unknown>>(updater: StateUpdater<T>) => Promise<void>;
 }
 
 // ============================================================================
@@ -335,6 +339,37 @@ class SyncQueueManager<TState> {
 }
 
 // ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Detect Record fields in the initial state
+ */
+function detectRecordFields<TState>(state: TState): Array<keyof TState> {
+  const recordFields: Array<keyof TState> = [];
+
+  for (const [key, value] of Object.entries(state as Record<string, unknown>)) {
+    if (isRecordType(value)) {
+      recordFields.push(key as keyof TState);
+    }
+  }
+
+  return recordFields;
+}
+
+/**
+ * Check if a value is a Record type (plain object with string keys)
+ */
+function isRecordType(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    Object.prototype.toString.call(value) === '[object Object]' &&
+    !Array.isArray(value)
+  );
+}
+
+// ============================================================================
 // MAIN MULTIPLAYER ORCHESTRATOR
 // ============================================================================
 
@@ -348,10 +383,15 @@ class MultiplayerOrchestrator<TState> {
   private stateBeforeDisconnection: TState | null = null;
   private cleanupFunctions: Array<() => void> = [];
 
+  // Enhanced granular state management
+  private keyManager: StorageKeyManager<TState>;
+  private granularStateManager: GranularStateManager<TState> | null = null;
+
   constructor(
     private client: HPKVStorage,
     private options: MultiplayerOptions<TState>,
     private api: StoreApi<TState>,
+    private initialState: TState,
   ) {
     this.logger = createLogger(options.logLevel ?? LogLevel.INFO);
     this.performanceMonitor = new PerformanceMonitor(options.profiling ?? false);
@@ -360,6 +400,34 @@ class MultiplayerOrchestrator<TState> {
     this.conflictResolver = new ConflictResolver(this.logger);
     this.stateHydrator = new StateHydrator(this.client, this.logger, this.performanceMonitor);
     this.syncQueueManager = new SyncQueueManager(this.logger, this.performanceMonitor);
+
+    // Automatically detect Record fields from initial state
+    const recordFields = detectRecordFields(this.initialState);
+
+    // Create automatic key generators for detected Record fields
+    const autoKeyGenerators: Partial<
+      Record<keyof TState, (field: string, entryKey: string) => string>
+    > = {};
+    for (const field of recordFields) {
+      const fieldKey = field as keyof TState;
+      if (!options.keyGenerators?.[fieldKey]) {
+        autoKeyGenerators[fieldKey] = (fieldName: string, entryKey: string) =>
+          `${options.namespace}:${fieldName}:${entryKey}`;
+      }
+    }
+
+    // Merge custom and automatic key generators
+    const allKeyGenerators = { ...autoKeyGenerators, ...options.keyGenerators };
+
+    // Initialize granular state management
+    this.keyManager = new StorageKeyManager(options.namespace, allKeyGenerators);
+
+    // Always enable granular state manager if we have Record fields
+    if (recordFields.length > 0 || options.keyGenerators) {
+      this.granularStateManager = new GranularStateManager(this.keyManager, this.logger, updates =>
+        this.syncGranularUpdates(updates),
+      );
+    }
 
     this.setupEventListeners();
   }
@@ -373,14 +441,44 @@ class MultiplayerOrchestrator<TState> {
     this.cleanupFunctions.push(connectionCleanup);
 
     const changeListener = async (event: HPKVChangeEvent) => {
-      this.logger.debug(`Remote state update for key '${event.key}'`, {
+      this.logger.debug(`Remote state update for key '${event.key}' : ${event.value}`, {
         operation: 'change-listener',
         clientId: this.client.getClientId(),
       });
-      if (event.value === null) {
-        event.value = (this.api.getInitialState() as Record<string, unknown>)[event.key];
+
+      // Parse the storage key to determine if it's a granular update
+      const parsed = this.keyManager.parseStorageKey(event.key);
+
+      if (parsed.isGranular && this.granularStateManager) {
+        // Handle granular updates
+        const update: GranularUpdate = {
+          field: parsed.field,
+          subKey: parsed.subKey,
+          value: event.value,
+          operation: event.value === null ? 'delete' : 'set',
+          storageKey: event.key,
+        };
+
+        const stateUpdate = this.granularStateManager.applyRemoteGranularUpdate(
+          update,
+          this.api.getState(),
+        );
+
+        await this.applyStateChange(stateUpdate, false, true);
+      } else {
+        // Handle traditional non-granular updates
+        // If value is null, it means the key was deleted/cleared
+        const updateValue =
+          event.value === null
+            ? (this.api.getInitialState() as Record<string, unknown>)[parsed.field]
+            : event.value;
+
+        await this.applyStateChange(
+          { [parsed.field]: updateValue } as Partial<TState>,
+          false,
+          true,
+        );
       }
-      await this.applyStateChange({ [event.key]: event.value } as Partial<TState>, false, true);
     };
 
     const removeChangeListener = this.client.addChangeListener(changeListener);
@@ -503,10 +601,39 @@ class MultiplayerOrchestrator<TState> {
 
     const syncPromises = Object.entries(state).map(async ([key, value]) => {
       await this.client.setItem(key, value);
-      this.logger.debug(`Persisted '${key}' state in database`, {
+      this.logger.debug(`Persisted '${key}': ${value} in database`, {
         operation: 'sync',
         clientId: this.client.getClientId(),
       });
+    });
+
+    await Promise.all(syncPromises);
+
+    const duration = Date.now() - startTime;
+    this.performanceMonitor.recordSyncTime(duration);
+  }
+
+  /**
+   * Sync granular updates to remote storage
+   */
+  private async syncGranularUpdates(updates: GranularUpdate[]): Promise<void> {
+    const startTime = Date.now();
+
+    const syncPromises = updates.map(async update => {
+      if (update.operation === 'delete') {
+        // For deletions, we might need to remove the key entirely or set to null
+        await this.client.setItem(update.storageKey, null);
+      } else {
+        await this.client.setItem(update.storageKey, update.value);
+      }
+
+      this.logger.debug(
+        `Synced granular update for key '${update.storageKey}' (${update.operation})`,
+        {
+          operation: 'granular-sync',
+          clientId: this.client.getClientId(),
+        },
+      );
     });
 
     await Promise.all(syncPromises);
@@ -589,6 +716,47 @@ class MultiplayerOrchestrator<TState> {
 
   getMetrics(): PerformanceMetrics {
     return this.performanceMonitor.getMetrics();
+  }
+
+  getSubscriptionPatterns(): string[] {
+    return this.keyManager.getSubscriptionPatterns();
+  }
+
+  /**
+   * Handle draft-style state updates
+   */
+  async handleDraftUpdate(updater: StateUpdater<TState>): Promise<void> {
+    if (!this.granularStateManager) {
+      throw new MultiplayerError(
+        'Draft updates are not available. No Record fields detected in state',
+        'DRAFT_UPDATES_DISABLED',
+        false,
+      );
+    }
+
+    try {
+      const currentState = this.api.getState();
+      const draft = this.granularStateManager.createDraftState(currentState);
+      const result = updater(draft);
+      const finalState = await this.granularStateManager.finalizeDraftUpdates(result || draft);
+
+      // Apply the cleaned state to the store
+      this.api.setState(finalState, false);
+
+      this.logger.debug('Completed draft update', {
+        operation: 'draft-update',
+        clientId: this.client.getClientId(),
+      });
+
+      this.performanceMonitor.recordStateChange();
+    } catch (error) {
+      this.logger.error(
+        'Error during draft update',
+        error instanceof Error ? error : new Error(String(error)),
+        { operation: 'draft-update' },
+      );
+      throw error;
+    }
   }
 
   async cleanup(): Promise<void> {
@@ -679,8 +847,15 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
 
   const logger = createLogger(syncOptions.logLevel ?? LogLevel.INFO);
 
-  const subscribedKeysArray = syncOptions.subscribeToUpdatesFor!().map(String);
-  const publishedKeysArray = syncOptions.publishUpdatesFor!().map(String);
+  // Generate subscription patterns - orchestrator will handle Record detection internally
+  // Use broad pattern-based subscriptions to catch all potential granular updates
+  const subscribedKeysArray: string[] = [
+    // Traditional field subscriptions
+    ...syncOptions.subscribeToUpdatesFor!().map(key => String(key)),
+  ];
+
+  // Pass just the field names, not full keys - HPKVStorage will add namespace prefix
+  const publishedKeysArray = syncOptions.publishUpdatesFor!().map(key => String(key));
 
   const hpkvStorageOptions: HPKVStorageOptions = {
     namespace: syncOptions.namespace,
@@ -698,7 +873,7 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
     logger,
   );
 
-  const orchestrator = new MultiplayerOrchestrator(client, syncOptions, api as any);
+  const orchestrator = new MultiplayerOrchestrator(client, syncOptions, api as any, configResult);
 
   const multiplayerState: MultiplayerState = {
     connectionState: ConnectionState.DISCONNECTED,
@@ -710,6 +885,8 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
     destroy: () => orchestrator.destroy(),
     getConnectionStatus: () => orchestrator.getConnectionStatus(),
     getMetrics: () => orchestrator.getMetrics(),
+    updateDraft: <T extends Record<string, unknown>>(updater: StateUpdater<T>) =>
+      orchestrator.handleDraftUpdate(updater as StateUpdater<TState>),
   };
 
   const store = config(
@@ -731,6 +908,9 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
         client?.getConnectionStatus()?.connectionState ?? ConnectionState.DISCONNECTED,
       hasHydrated: false,
     },
+    // Add updateDraft method directly to the store state
+    updateDraft: <T extends Record<string, unknown>>(updater: StateUpdater<T>) =>
+      orchestrator.handleDraftUpdate(updater as StateUpdater<TState>),
   } as TStateWithMultiplayer;
 
   void orchestrator.hydrate().catch(error => {
@@ -746,3 +926,409 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
 };
 
 export const multiplayer = impl as unknown as Multiplayer;
+
+// ============================================================================
+// USAGE EXAMPLES
+// ============================================================================
+
+/**
+ * Enhanced Zustand Multiplayer Middleware Usage Examples
+ *
+ * @example Basic Usage with Automatic Record Detection
+ * ```typescript
+ * interface TodoState {
+ *   todos: Record<string, Todo>;  // Automatically detected and uses granular storage
+ *   user: { name: string; email: string };
+ *   settings: { theme: string; notifications: boolean };
+ * }
+ *
+ * const useTodoStore = create(
+ *   multiplayer(
+ *     (set, get) => ({
+ *       todos: {},  // Record type automatically gets granular storage
+ *       user: { name: '', email: '' },
+ *       settings: { theme: 'light', notifications: true },
+ *
+ *       // Traditional methods still work
+ *       addTodo: (todo: Todo) => set(state => ({
+ *         todos: { ...state.todos, [todo.id]: todo }
+ *       })),
+ *
+ *       updateUser: (updates: Partial<User>) => set(state => ({
+ *         user: { ...state.user, ...updates }
+ *       })),
+ *     }),
+ *     {
+ *       namespace: 'todo-app',
+ *       apiBaseUrl: 'https://api.hpkv.io',
+ *       apiKey: 'your-api-key',
+ *       // Custom key generators are optional - defaults are provided
+ *       keyGenerators: {
+ *         todos: (field, entryKey) => `todo-app:todos:${entryKey}`,
+ *       }
+ *     }
+ *   )
+ * );
+ *
+ * // Usage with granular updates - no conflicts between users!
+ * const { updateDraft } = useTodoStore.getState().multiplayer;
+ *
+ * // Update specific todos without affecting other users' concurrent edits
+ * await updateDraft(draft => {
+ *   // User A can edit todo-1 while User B edits todo-2 simultaneously
+ *   draft.todos['todo-1'] = {
+ *     id: 'todo-1',
+ *     text: 'Updated by User A',
+ *     completed: true
+ *   };
+ *
+ *   // Remove a todo
+ *   draft.todos.__granular_delete__('todo-3');
+ *
+ *   // Add a new todo
+ *   draft.todos['todo-4'] = {
+ *     id: 'todo-4',
+ *     text: 'New todo',
+ *     completed: false
+ *   };
+ * });
+ * ```
+ *
+ * @example Advanced Configuration with Custom Key Generators
+ * ```typescript
+ * const useAdvancedStore = create(
+ *   multiplayer(
+ *     (set, get) => ({
+ *       users: {} as Record<string, User>,     // Auto-detected Record type
+ *       projects: {} as Record<string, Project>, // Auto-detected Record type
+ *       metadata: { version: 1, lastUpdated: Date.now() } // Regular field
+ *     }),
+ *     {
+ *       namespace: 'collaboration-app',
+ *       apiBaseUrl: 'https://api.hpkv.io',
+ *       apiKey: 'your-api-key',
+ *       // Override default key generation for specific fields
+ *       keyGenerators: {
+ *         users: (field, entryKey) => `app:user:${entryKey}`,
+ *         projects: (field, entryKey) => `app:project:${entryKey}`,
+ *       }
+ *     }
+ *   )
+ * );
+ * ```
+ *
+ * @example Pattern-Based Subscriptions
+ * With automatic Record detection, the middleware automatically generates
+ * HPKV subscription patterns for detected Record fields:
+ *
+ * - "namespace:*" - Subscribe to all namespace keys
+ * - "namespace:todos:*" - Subscribe to all todo items
+ * - "namespace:users:*" - Subscribe to all user items
+ *
+ * This enables dynamic subscription to new keys as they're created.
+ */
+
+// ============================================================================
+// GRANULAR UPDATE TYPES
+// ============================================================================
+
+/**
+ * Represents a granular update to a specific field
+ */
+export interface GranularUpdate<T = any> {
+  /** The field being updated */
+  field: string;
+  /** The sub-key within the field (for Record types) */
+  subKey?: string;
+  /** The new value */
+  value: T;
+  /** The operation type */
+  operation: 'set' | 'delete' | 'patch';
+  /** The full storage key */
+  storageKey: string;
+}
+
+/**
+ * Draft-like interface for Immer-style updates
+ */
+export type DraftState<T> = {
+  [K in keyof T]: T[K] extends Record<string, infer V>
+    ? Record<string, V> & {
+        __granular_set__(key: string, value: V): void;
+        __granular_delete__(key: string): void;
+      }
+    : T[K];
+};
+
+/**
+ * Update function that receives a draft state
+ */
+export type StateUpdater<T> = (draft: DraftState<T>) => void | DraftState<T>;
+
+/**
+ * Storage key utilities
+ */
+export class StorageKeyManager<TState> {
+  constructor(
+    private namespace: string,
+    private config?: Partial<Record<keyof TState, (field: string, entryKey: string) => string>>,
+  ) {}
+
+  /**
+   * Generate storage key for a field
+   */
+  getFieldKey(field: keyof TState): string {
+    return `${this.namespace}:${String(field)}`;
+  }
+
+  /**
+   * Generate storage key for a record entry
+   */
+  getRecordEntryKey(field: keyof TState, entryKey: string): string {
+    const customGenerator = this.config?.[field];
+    if (customGenerator) {
+      return customGenerator(String(field), entryKey);
+    }
+    return `${this.namespace}:${String(field)}:${entryKey}`;
+  }
+
+  /**
+   * Generate subscription patterns for granular fields
+   */
+  getSubscriptionPatterns(): string[] {
+    const patterns: string[] = [`${this.namespace}:*`];
+
+    if (this.config) {
+      for (const field in this.config) {
+        patterns.push(`${this.namespace}:${String(field)}:*`);
+      }
+    }
+
+    return patterns;
+  }
+
+  /**
+   * Parse a storage key to extract field and subkey information
+   */
+  parseStorageKey(storageKey: string): { field: string; subKey?: string; isGranular: boolean } {
+    const prefix = `${this.namespace}:`;
+    if (!storageKey.startsWith(prefix)) {
+      return { field: storageKey, isGranular: false };
+    }
+
+    const keyParts = storageKey.slice(prefix.length).split(':');
+    if (keyParts.length === 1) {
+      return { field: keyParts[0], isGranular: false };
+    }
+
+    const [field, ...subKeyParts] = keyParts;
+    return {
+      field,
+      subKey: subKeyParts.join(':'),
+      isGranular: true,
+    };
+  }
+
+  /**
+   * Check if a field should use record-based storage
+   */
+  isRecordField(field: keyof TState): boolean {
+    return this.config?.[field] !== undefined;
+  }
+
+  /**
+   * Check if a field should use nested object storage
+   */
+  isNestedObjectField(field: keyof TState): boolean {
+    return this.config?.[field] !== undefined;
+  }
+}
+
+// ============================================================================
+// GRANULAR STATE MANAGER
+// ============================================================================
+
+/**
+ * Manages granular state updates and creates draft states
+ */
+export class GranularStateManager<TState> {
+  private pendingUpdates: Map<string, GranularUpdate> = new Map();
+  private isInDraftMode = false;
+
+  constructor(
+    private keyManager: StorageKeyManager<TState>,
+    private logger: Logger,
+    private syncToRemote: (updates: GranularUpdate[]) => Promise<void>,
+  ) {}
+
+  /**
+   * Create a draft state for Immer-like updates
+   */
+  createDraftState(currentState: TState): DraftState<TState> {
+    this.isInDraftMode = true;
+    this.pendingUpdates.clear();
+
+    const draft = { ...currentState } as any;
+
+    // Enhance record fields with granular update methods
+    for (const [key, value] of Object.entries(currentState as Record<string, unknown>)) {
+      const fieldKey = key as keyof TState;
+
+      if (this.keyManager.isRecordField(fieldKey) && typeof value === 'object' && value !== null) {
+        draft[key] = this.createRecordProxy(fieldKey, value as Record<string, any>);
+      }
+    }
+
+    return draft as DraftState<TState>;
+  }
+
+  /**
+   * Create a proxy for Record fields to track granular changes
+   */
+  private createRecordProxy<V>(
+    field: keyof TState,
+    record: Record<string, V>,
+  ): Record<string, V> & {
+    __granular_set__(key: string, value: V): void;
+    __granular_delete__(key: string): void;
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const granularStateManager = this;
+
+    return new Proxy(
+      {
+        ...record,
+        __granular_set__(key: string, value: V): void {
+          granularStateManager.addPendingUpdate(field, key, value, 'set');
+        },
+        __granular_delete__(key: string): void {
+          granularStateManager.addPendingUpdate(field, key, undefined, 'delete');
+        },
+      } as any,
+      {
+        set(target, prop, value) {
+          if (typeof prop === 'string' && !prop.startsWith('__granular_')) {
+            granularStateManager.addPendingUpdate(field, prop, value, 'set');
+          }
+          target[prop] = value;
+          return true;
+        },
+        deleteProperty(target, prop) {
+          if (typeof prop === 'string' && !prop.startsWith('__granular_')) {
+            granularStateManager.addPendingUpdate(field, prop, undefined, 'delete');
+          }
+          delete target[prop];
+          return true;
+        },
+      },
+    );
+  }
+
+  /**
+   * Add a pending update
+   */
+  private addPendingUpdate<V>(
+    field: keyof TState,
+    subKey?: string,
+    value?: V,
+    operation: 'set' | 'delete' | 'patch' = 'set',
+  ): void {
+    const storageKey = subKey
+      ? this.keyManager.getRecordEntryKey(field, subKey)
+      : this.keyManager.getFieldKey(field);
+
+    const update: GranularUpdate<V> = {
+      field: String(field),
+      subKey,
+      value: value as V,
+      operation,
+      storageKey,
+    };
+
+    this.pendingUpdates.set(storageKey, update);
+  }
+
+  /**
+   * Apply pending updates and return the modified state
+   */
+  async finalizeDraftUpdates(draftState: DraftState<TState>): Promise<TState> {
+    try {
+      const updates = Array.from(this.pendingUpdates.values());
+
+      if (updates.length > 0) {
+        this.logger.debug(`Applying ${updates.length} granular updates`, {
+          operation: 'granular-update',
+        });
+
+        // Sync to remote storage
+        await this.syncToRemote(updates);
+      }
+
+      // Clean up proxy methods from the state
+      const cleanState = this.cleanDraftState(draftState);
+      return cleanState;
+    } finally {
+      this.isInDraftMode = false;
+      this.pendingUpdates.clear();
+    }
+  }
+
+  /**
+   * Clean proxy methods from draft state
+   */
+  private cleanDraftState(draftState: DraftState<TState>): TState {
+    const cleanState = { ...draftState } as any;
+
+    for (const [key, value] of Object.entries(cleanState)) {
+      if (typeof value === 'object' && value !== null && '__granular_set__' in value) {
+        const { __granular_set__, __granular_delete__, ...cleanRecord } = value as any;
+        cleanState[key] = cleanRecord;
+      }
+    }
+
+    return cleanState as TState;
+  }
+
+  /**
+   * Apply remote granular updates to local state
+   */
+  applyRemoteGranularUpdate(update: GranularUpdate, currentState: TState): Partial<TState> {
+    const { field, subKey, value, operation } = update;
+    const currentValue = (currentState as any)[field];
+
+    if (!subKey) {
+      // Simple field update
+      return { [field]: value } as Partial<TState>;
+    }
+
+    // Record field update
+    if (typeof currentValue === 'object' && currentValue !== null) {
+      const newRecord = { ...currentValue };
+
+      if (operation === 'delete') {
+        delete newRecord[subKey];
+      } else {
+        newRecord[subKey] = value;
+      }
+
+      return { [field]: newRecord } as Partial<TState>;
+    }
+
+    // Initialize empty record if field doesn't exist
+    return { [field]: { [subKey]: value } } as Partial<TState>;
+  }
+
+  /**
+   * Check if currently in draft mode
+   */
+  isDraftMode(): boolean {
+    return this.isInDraftMode;
+  }
+
+  /**
+   * Get pending updates (for debugging)
+   */
+  getPendingUpdates(): GranularUpdate[] {
+    return Array.from(this.pendingUpdates.values());
+  }
+}

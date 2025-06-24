@@ -61,11 +61,6 @@ describe('Multiplayer Middleware Integration Tests', () => {
     await storeCreator.cleanupAllStores();
   });
 
-  afterEach(async () => {
-    // Clean up stores after each test to avoid interference
-    await storeCreator.cleanupAllStores();
-  });
-
   function createTestStore(
     options?: Partial<MultiplayerOptions<TestState>> | MultiplayerOptions<TestState>,
   ): TestZustandStore {

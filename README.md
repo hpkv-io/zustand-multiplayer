@@ -366,6 +366,91 @@ function AdminControls() {
 }
 ```
 
+### Granular Storage (New!)
+
+**Eliminate conflicts in collaborative editing** with granular storage that stores Record/array items as individual keys instead of replacing entire objects:
+
+```javascript
+interface TodoState {
+  todos: Record<string, { text: string; completed: boolean }>;
+  metadata: { title: string; description: string };
+}
+
+export const useTodoStore = create(
+  multiplayer(
+    (set) => ({
+      todos: {},
+      metadata: { title: '', description: '' },
+    }),
+    {
+      namespace: 'collaborative-todos',
+      apiBaseUrl: process.env.REACT_APP_HPKV_API_BASE_URL,
+      tokenGenerationUrl: '/api/generate-token',
+      
+      // Enable granular storage for conflict-free collaboration
+      granularStorage: {
+        enableImmerLike: true,
+        recordFields: ['todos'], // Store todos as individual keys
+        nestedObjectFields: ['metadata'], // Use JSON patch for metadata
+      },
+    }
+  )
+);
+
+// Multiple users can edit different todos simultaneously without conflicts!
+function TodoApp() {
+  const { todos, updateDraft } = useTodoStore();
+
+  const addTodo = async () => {
+    const id = crypto.randomUUID();
+    await updateDraft?.(draft => {
+      draft.todos[id] = { text: 'New todo', completed: false };
+    });
+  };
+
+  const toggleTodo = async (id) => {
+    await updateDraft?.(draft => {
+      if (draft.todos[id]) {
+        draft.todos[id].completed = !draft.todos[id].completed;
+      }
+    });
+  };
+
+  const deleteTodo = async (id) => {
+    await updateDraft?.(draft => {
+      draft.todos.__granular_delete__(id);
+    });
+  };
+
+  return (
+    <div>
+      <button onClick={addTodo}>Add Todo</button>
+      {Object.entries(todos).map(([id, todo]) => (
+        <div key={id}>
+          <span style={{ textDecoration: todo.completed ? 'line-through' : 'none' }}>
+            {todo.text}
+          </span>
+          <button onClick={() => toggleTodo(id)}>Toggle</button>
+          <button onClick={() => deleteTodo(id)}>Delete</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**Key Benefits:**
+- ✅ **No more array conflicts** - Multiple users can edit different items simultaneously
+- ✅ **Efficient syncing** - Only changed items are synchronized, not entire collections
+- ✅ **Immer-like API** - Familiar draft-style updates with `updateDraft`
+- ✅ **Backward compatible** - Traditional updates still work alongside granular updates
+
+**How it works:**
+- **Traditional**: `namespace:todos` → `{"todo-1": {...}, "todo-2": {...}}`
+- **Granular**: Individual keys like `namespace:todos:todo-1` → `{...}` and `namespace:todos:todo-2` → `{...}`
+
+📖 **[Complete Granular Storage Guide](./GRANULAR_STORAGE.md)** for detailed documentation and examples.
+
 ## Core Concepts
 
 ### Namespaces
@@ -406,6 +491,17 @@ All published state changes are automatically:
   // Selective sync
   publishUpdatesFor: () => ['field1', 'field2'],
   subscribeToUpdatesFor: () => ['field1', 'field3'],
+  
+  // Granular storage for conflict-free collaboration
+  granularStorage: {
+    enableImmerLike: true,
+    recordFields: ['todos', 'users', 'posts'],
+    nestedObjectFields: ['settings', 'metadata'],
+    keyGenerators: {
+      todos: (id) => `todo_${id}`,
+      users: (id) => `user_${id}`,
+    },
+  },
   
   // Lifecycle hooks
   onHydrate: (state) => console.log('Hydrated:', state),

@@ -555,10 +555,13 @@ class HPKVStorageImpl implements HPKVStorage {
         this.storageOptions.apiKey,
         this.storageOptions.apiBaseUrl || '',
       );
-      token = await tokenHelper.generateTokenForStore(
-        this.namespace,
-        this.subscribedKeys.map(key => this.getFullKey(key)),
-      );
+      const fullSubscribedKeys = this.subscribedKeys.map(key => this.getFullKey(key));
+      this.logger.debug(`Generating token with subscribed keys`, {
+        operation: 'token-generation',
+        clientId: this.clientId,
+      });
+
+      token = await tokenHelper.generateTokenForStore(this.namespace, fullSubscribedKeys);
     } else if (this.storageOptions.tokenGenerationUrl) {
       token = await this.fetchToken();
     } else {
@@ -764,12 +767,12 @@ class HPKVStorageImpl implements HPKVStorage {
   async setItem(key: string, value: unknown): Promise<void> {
     this.checkDestroyed();
     const operation = async (): Promise<void> => {
+      const fullKey = this.getFullKey(key);
       if (!this.publishedKeys.includes(key)) {
         return Promise.resolve();
       }
       await this.ensureConnection();
 
-      const fullKey = this.getFullKey(key);
       const valueToStore: StoredValue = {
         value,
         clientId: this.clientId,

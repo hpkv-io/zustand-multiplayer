@@ -41,9 +41,10 @@ export class TokenHelper {
   }
 
   /**
-   * Generates a WebSocket token for a store
+   * Generates a WebSocket token for a store with pattern support
    *
-   * @param storeName The name of the store (used as key in HPKV)
+   * @param namespace The namespace for the store
+   * @param subscribedKeys Array of exact keys or patterns to subscribe to
    * @returns A WebSocket token
    */
   async generateTokenForStore(namespace: string, subscribedKeys: string[]): Promise<string> {
@@ -58,12 +59,13 @@ export class TokenHelper {
           await apiClient.set(key, { value: '' });
         }
       }
+      const allSubscribedKeys = [...subscribedKeys, ...subscribedKeys.map(key => `${key}:*`)];
       // Generate token with access limited to this store key
       const token = await this.tokenManager.generateToken({
-        subscribeKeys: subscribedKeys,
+        subscribeKeys: allSubscribedKeys,
         accessPattern: `^${escapeRegExp(namespace)}:.*$`,
       });
-
+      console.log('token generated for namespace ', namespace, ' with token ', token);
       return token;
     } catch (error) {
       throw new Error(`Failed to generate token for namespace ${namespace}: ${error}`);
