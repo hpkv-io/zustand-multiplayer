@@ -767,18 +767,25 @@ class HPKVStorageImpl implements HPKVStorage {
   async setItem(key: string, value: unknown): Promise<void> {
     this.checkDestroyed();
     const operation = async (): Promise<void> => {
-      const fullKey = this.getFullKey(key);
-      if (!this.publishedKeys.includes(key)) {
+      if (
+        !this.publishedKeys.some(
+          publishedKey => key.startsWith(`${publishedKey}:`) || key === publishedKey,
+        )
+      ) {
         return Promise.resolve();
       }
       await this.ensureConnection();
-
+      const fullKey = this.getFullKey(key);
       const valueToStore: StoredValue = {
         value,
         clientId: this.clientId,
         timestamp: Date.now(),
       };
       const stringValue = JSON.stringify(valueToStore);
+      this.logger.debug(`Setting value for key ${fullKey} : ${stringValue}`, {
+        operation: 'setItem',
+        clientId: this.clientId,
+      });
       await this.client?.set(fullKey, stringValue, true);
     };
 

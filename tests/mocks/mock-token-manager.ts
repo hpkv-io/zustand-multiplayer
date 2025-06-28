@@ -28,6 +28,7 @@ export class MockTokenHelper {
   ) {}
 
   async generateTokenForStore(namespace: string, subscribedKeys: string[]): Promise<string> {
-    return createMockToken(subscribedKeys, `^${namespace}:.*$`);
+    const allSubscribedKeys = [...subscribedKeys, ...subscribedKeys.map(key => `${key}:*`)];
+    return createMockToken(allSubscribedKeys, `^${namespace}:.*$`);
   }
 }

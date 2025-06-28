@@ -601,10 +601,6 @@ class MultiplayerOrchestrator<TState> {
 
     const syncPromises = Object.entries(state).map(async ([key, value]) => {
       await this.client.setItem(key, value);
-      this.logger.debug(`Persisted '${key}': ${value} in database`, {
-        operation: 'sync',
-        clientId: this.client.getClientId(),
-      });
     });
 
     await Promise.all(syncPromises);
@@ -622,9 +618,9 @@ class MultiplayerOrchestrator<TState> {
     const syncPromises = updates.map(async update => {
       if (update.operation === 'delete') {
         // For deletions, we might need to remove the key entirely or set to null
-        await this.client.setItem(update.storageKey, null);
+        await this.client.setItem(`${update.field}:${update.subKey}`, null);
       } else {
-        await this.client.setItem(update.storageKey, update.value);
+        await this.client.setItem(`${update.field}:${update.subKey}`, update.value);
       }
 
       this.logger.debug(
@@ -1111,12 +1107,12 @@ export class StorageKeyManager<TState> {
    * Parse a storage key to extract field and subkey information
    */
   parseStorageKey(storageKey: string): { field: string; subKey?: string; isGranular: boolean } {
-    const prefix = `${this.namespace}:`;
-    if (!storageKey.startsWith(prefix)) {
+    //const prefix = `${this.namespace}:`;
+    /* if (!storageKey.startsWith(prefix)) {
       return { field: storageKey, isGranular: false };
-    }
+    } */
 
-    const keyParts = storageKey.slice(prefix.length).split(':');
+    const keyParts = storageKey.split(':');
     if (keyParts.length === 1) {
       return { field: keyParts[0], isGranular: false };
     }
