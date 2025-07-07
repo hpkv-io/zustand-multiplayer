@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { MultiplayerOptions, WithMultiplayer } from '../src/multiplayer';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { MultiplayerOptions, WithMultiplayer, ImmerStateCreator, WithMultiplayerMiddleware } from '../src/multiplayer';
 import { LogLevel } from '../src/logger';
 import { createUniqueStoreName, waitFor, createTestServer } from './utils/test-utils';
-import { StateCreator } from 'zustand';
 import { StoreCreator } from './utils/store-creator';
 import { StoreApi, UseBoundStore } from 'zustand';
 import { ConnectionState } from '@hpkv/websocket-client';
@@ -20,26 +19,21 @@ type TestState = {
   setText: (text: string) => void;
   updateNested: (value: number) => void;
   addItem: (item: string) => void;
-  removeItem: (item: string) => void;
 };
 
 // Create type for our test store with multiplayer
-type TestZustandStore = UseBoundStore<StoreApi<WithMultiplayer<TestState>>>;
+type TestZustandStore = UseBoundStore<WithMultiplayerMiddleware<StoreApi<WithMultiplayer<TestState>>, WithMultiplayer<TestState>>>;
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   nested: { value: 0 },
   items: {},
-  increment: () => set(state => ({ count: state.count + 1 })),
-  decrement: () => set(state => ({ count: state.count - 1 })),
+  increment: () => set(state => { state.count++; }),
+  decrement: () => set(state => { state.count--; }),
   setText: (text: string) => set({ text }),
   updateNested: (value: number) => set({ nested: { value } }),
-  addItem: (item: string) => set(state => ({ items: { ...state.items, [item]: item } })),
-  removeItem: (item: string) =>
-    set(state => ({
-      items: { ...Object.fromEntries(Object.entries(state.items).filter(([key]) => key !== item)) },
-    })),
+  addItem: (item: string) => set(state => { state.items[item] = item; }),
 });
 
 describe('Multiplayer Middleware Integration Tests', () => {
@@ -54,6 +48,12 @@ describe('Multiplayer Middleware Integration Tests', () => {
       apiKey: process.env.HPKV_API_KEY,
       apiBaseUrl: process.env.HPKV_API_BASE_URL,
       logLevel: LogLevel.DEBUG,
+      clientConfig: {
+        throttling: {
+          enabled: true,
+          rateLimit: 10,
+        },
+      },
     };
   });
 
@@ -75,23 +75,57 @@ describe('Multiplayer Middleware Integration Tests', () => {
     const store1 = createTestStore({ namespace: uniqueNamespace });
     const store2 = createTestStore({ namespace: uniqueNamespace });
 
+    console.log('Waiting for stores to hydrate...');
     // Wait for first store to be ready
     await waitFor(() => {
       expect(store1.getState().multiplayer.hasHydrated).toBe(true);
       expect(store2.getState().multiplayer.hasHydrated).toBe(true);
     });
 
-    store1.getState().increment();
-    store2.getState().setText('Integration Test');
-    await new Promise(resolve => setTimeout(resolve, 100));
+    console.log('Both stores hydrated. Checking connection states...');
+    console.log('Store1 connection state:', store1.getState().multiplayer.connectionState);
+    console.log('Store2 connection state:', store2.getState().multiplayer.connectionState);
 
-    await waitFor(
-      () => {
-        expect(store2.getState().count).toBe(1);
-        expect(store1.getState().text).toBe('Integration Test');
-      },
-      { timeout: 10000, interval: 200 },
-    );
+    // Wait for websocket subscriptions to be fully established
+    console.log('Waiting for websocket subscriptions to be fully established...');
+    await waitFor(() => {
+      console.log('Store1 subscription ready:', store1.getState().multiplayer.isSubscriptionReady);
+      console.log('Store2 subscription ready:', store2.getState().multiplayer.isSubscriptionReady);
+      expect(store1.getState().multiplayer.isSubscriptionReady).toBe(true);
+      expect(store2.getState().multiplayer.isSubscriptionReady).toBe(true);
+    }, { timeout: 5000, interval: 100 });
+
+    console.log('Setting count to 1 by store1');
+    console.log('Store1 count before increment:', store1.getState().count);
+    console.log('Store2 count before increment:', store2.getState().count);
+
+    store1.getState().increment();
+    
+    console.log('Store1 count after increment:', store1.getState().count);
+    console.log('Store2 count after increment (should still be 0):', store2.getState().count);
+    
+    console.log('Waiting for store2 to receive the change notification...');
+    await waitFor(() => {
+      console.log('Store2 current count:', store2.getState().count);
+      expect(store2.getState().count).toBe(1);
+    }, { timeout: 10000, interval: 100 });
+
+    console.log('Setting text to Integration Test by store2');
+    console.log('Store1 text before setText:', store1.getState().text);
+    console.log('Store2 text before setText:', store2.getState().text);
+
+    store2.getState().setText('Integration Test');
+
+    console.log('Store1 text after setText (should still be empty):', store1.getState().text);
+    console.log('Store2 text after setText:', store2.getState().text);
+
+    console.log('Waiting for store1 to receive the change notification...');
+    await waitFor(() => {
+      console.log('Store1 current text:', store1.getState().text);
+      expect(store1.getState().text).toBe('Integration Test');
+    }, { timeout: 10000, interval: 100 });
+
+    console.log('Test completed successfully!');
   });
 
   it.skipIf(skip)('should persist state across store recreations', async () => {
@@ -139,7 +173,8 @@ describe('Multiplayer Middleware Integration Tests', () => {
     store1.getState().addItem('item1');
     store1.getState().addItem('item2');
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait for all changes to be synced to the server
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     const store2 = createTestStore({ namespace: uniqueNamespace });
     await waitFor(() => {
@@ -373,7 +408,6 @@ describe('Multiplayer Middleware Integration Tests', () => {
         const store1 = createTestStore({
           namespace: uniqueNamespace,
           tokenGenerationUrl: serverInfo.serverUrl,
-          // Explicitly set apiKey to undefined to ensure we're using tokenGenerationUrl
           apiKey: undefined,
         });
 
@@ -397,6 +431,7 @@ describe('Multiplayer Middleware Integration Tests', () => {
         await waitFor(() => {
           expect(store2.getState().count).toBe(1);
           expect(store2.getState().text).toBe('Token URL Test');
+          expect(store2.getState().multiplayer.hasHydrated).toBe(true);
         });
 
         // Update from second store

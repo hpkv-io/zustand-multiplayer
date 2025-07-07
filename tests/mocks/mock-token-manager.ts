@@ -12,7 +12,7 @@ export class MockWebsocketTokenManager {
     await new Promise(resolve => setTimeout(resolve, 10));
 
     // Create a mock token with the provided configuration
-    return createMockToken(config.subscribeKeys, config.accessPattern);
+    return createMockToken(config.subscribePatterns ?? [], config.accessPattern);
   }
 }
 

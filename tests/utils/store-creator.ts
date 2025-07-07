@@ -3,10 +3,11 @@ import {
   MultiplayerOptions,
   MultiplayerState,
   WithMultiplayer,
+  ImmerStateCreator,
+  WithMultiplayerMiddleware,
 } from '../../src/multiplayer';
 import { LogLevel } from '../../src/logger';
 import { create, StoreApi, UseBoundStore } from 'zustand';
-import { StateCreator } from 'zustand';
 import { createUniqueStoreName } from './test-utils';
 
 const defaultMultiplayerOptions = {
@@ -18,24 +19,24 @@ const defaultMultiplayerOptions = {
 export class StoreCreator {
   private storeRegistry: Map<
     string,
-    UseBoundStore<StoreApi<unknown & { multiplayer: MultiplayerState }>>
+    UseBoundStore<StoreApi<any>>
   > = new Map();
 
   createStore<T>(
-    config: StateCreator<T, [['zustand/multiplayer', unknown]], []>,
+    config: ImmerStateCreator<T, [['zustand/multiplayer', unknown]], []>,
     options?: Partial<MultiplayerOptions<T>> | MultiplayerOptions<T>,
-  ): UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState }>> {
+  ): UseBoundStore<WithMultiplayerMiddleware<StoreApi<WithMultiplayer<T>>, WithMultiplayer<T>>> {
     const namespace = createUniqueStoreName('test-namespace');
     const opts = { namespace, ...defaultMultiplayerOptions, ...options };
     const store = create<WithMultiplayer<T>>()(multiplayer(config, opts));
     this.storeRegistry.set(
       opts.namespace,
-      store as UseBoundStore<StoreApi<unknown & { multiplayer: MultiplayerState }>>,
+      store,
     );
     return store;
   }
 
-  async cleanupStore<T>(store: UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState }>>) {
+  async cleanupStore<T>(store: UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState<T> }>>) {
     const state = store.getState();
     try {
       await state.multiplayer.clearStorage();

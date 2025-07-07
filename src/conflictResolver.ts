@@ -1,4 +1,5 @@
 import { Logger } from './logger';
+import { generateId, getCurrentTimestamp } from './utils';
 
 export interface StateChange<TState> {
   partial: TState | Partial<TState> | ((state: TState) => TState | Partial<TState>);
@@ -130,8 +131,8 @@ export class ConflictResolver<TState> {
             {
               partial: resolution.mergedValues,
               replace: false,
-              timestamp: Date.now(),
-              id: this.generateId(),
+              timestamp: getCurrentTimestamp(),
+              id: generateId(),
             },
           ];
         }
@@ -189,7 +190,5 @@ export class ConflictResolver<TState> {
     return Object.keys(partial as Record<string, unknown>).length > 0;
   }
 
-  private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }
+
 }

@@ -1,5 +1,7 @@
 import { ConnectionConfig, ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
 import { StateCreator, StoreApi, StoreMutatorIdentifier } from 'zustand/vanilla';
+import { produce } from 'immer';
+import type { Draft } from 'immer';
 import {
   ConflictInfo,
   ConflictResolution,
@@ -10,6 +12,8 @@ import { createHPKVStorage, HPKVChangeEvent, HPKVStorage, HPKVStorageOptions } f
 import { Logger, LogLevel, createLogger } from './logger';
 import { PerformanceMonitor, PerformanceMetrics } from './profiler';
 import { RetryConfig, createDefaultRetryConfig } from './retry';
+import { generateId, getCurrentTimestamp, normalizeError, clearTimeoutSafely } from './utils';
+import { StorageKeyManager } from './storageKeyManager';
 
 // ============================================================================
 // Types
@@ -28,19 +32,77 @@ export interface MultiplayerOptions<TState> {
   profiling?: boolean;
   retryConfig?: RetryConfig;
   clientConfig?: ConnectionConfig;
-  /** Custom key generators for specific fields */
-  keyGenerators?: Partial<Record<keyof TState, (field: string, entryKey: string) => string>>;
 }
 
 export type Write<T, U> = Omit<T, keyof U> & U;
 
-export type WithMultiplayerMiddleware<S, _A> = Write<S, { multiplayer: MultiplayerState }>;
+// Type utilities for immer-style updates (similar to immer middleware)
+type SkipTwo<T> = T extends { length: 0 }
+  ? []
+  : T extends { length: 1 }
+  ? []
+  : T extends { length: 0 | 1 }
+  ? []
+  : T extends [unknown, unknown, ...infer A]
+  ? A
+  : T extends [unknown, unknown?, ...infer A]
+  ? A
+  : T extends [unknown?, unknown?, ...infer A]
+  ? A
+  : never;
 
-export type WithMultiplayer<S> = S & { multiplayer: MultiplayerState };
+type SetStateType<T> = T extends readonly [any, ...any[]] ? Exclude<T[0], (...args: any[]) => any> : never;
 
-export interface MultiplayerState {
+// Enhanced set function type that accepts Draft<T>
+export type ImmerStateCreator<T, Mis extends [StoreMutatorIdentifier, unknown][] = [], Mos extends [StoreMutatorIdentifier, unknown][] = [], U = T> = (
+  setState: (
+    partial: T | Partial<T> | ((state: Draft<T>) => void),
+    replace?: boolean
+  ) => void,
+  getState: () => T,
+  store: {
+    setState: (
+      partial: T | Partial<T> | ((state: Draft<T>) => void),
+      replace?: boolean
+    ) => void;
+    getState: () => T;
+    subscribe: (listener: (state: T, prevState: T) => void) => () => void;
+  }
+) => U;
+
+type StoreWithImmerAndMultiplayer<S> = S extends { setState: infer SetState }
+  ? SetState extends {
+      (...args: infer A1): infer Sr1;
+      (...args: infer A2): infer Sr2;
+    }
+    ? {
+        setState(
+          nextStateOrUpdater:
+            | SetStateType<A1>
+            | Partial<SetStateType<A1>>
+            | ((state: Draft<SetStateType<A1>>) => void),
+          shouldReplace?: false,
+          ...args: SkipTwo<A1>
+        ): Sr1;
+        setState(
+          nextStateOrUpdater:
+            | SetStateType<A1>
+            | ((state: Draft<SetStateType<A1>>) => void),
+          shouldReplace: true,
+          ...args: SkipTwo<A1>
+        ): Sr2;
+      }
+    : never
+  : never;
+
+export type WithMultiplayerMiddleware<S, _A> = Write<S, StoreWithImmerAndMultiplayer<S> & { multiplayer: MultiplayerState<S> }>;
+
+export type WithMultiplayer<S> = S & { multiplayer: MultiplayerState<S> };
+
+export interface MultiplayerState<TState> {
   connectionState: ConnectionState;
   hasHydrated: boolean;
+  isSubscriptionReady: boolean;
   hydrate: () => Promise<void>;
   clearStorage: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -48,8 +110,6 @@ export interface MultiplayerState {
   destroy: () => Promise<void>;
   getConnectionStatus: () => ConnectionStats | null;
   getMetrics: () => PerformanceMetrics;
-  /** Update state using draft updates for Record fields */
-  updateDraft: <T extends Record<string, unknown>>(updater: StateUpdater<T>) => Promise<void>;
 }
 
 // ============================================================================
@@ -103,7 +163,7 @@ class StorageManager {
         } catch (error) {
           this.logger.error(
             'Error in connection listener',
-            error instanceof Error ? error : new Error(String(error)),
+            normalizeError(error),
             { operation: 'connection' },
           );
         }
@@ -140,10 +200,8 @@ class StorageManager {
   }
 
   private clearReconnectTimeout(): void {
-    if (this.reconnectTimeoutId) {
-      clearTimeout(this.reconnectTimeoutId);
-      this.reconnectTimeoutId = null;
-    }
+    clearTimeoutSafely(this.reconnectTimeoutId);
+    this.reconnectTimeoutId = null;
   }
 
   cleanup(): void {
@@ -165,6 +223,7 @@ class StateHydrator<TState> {
     private client: HPKVStorage,
     private logger: Logger,
     private performanceMonitor: PerformanceMonitor,
+    private keyManager: StorageKeyManager<TState>,
   ) {}
 
   async hydrate(
@@ -186,7 +245,7 @@ class StateHydrator<TState> {
     this.logger.info('Starting hydration', { operation: 'hydration' });
     this.isHydrating = true;
 
-    const startTime = Date.now();
+    const startTime = getCurrentTimestamp();
     this.hydrationPromise = this.performHydration(applyStateChange, onHydrate, startTime);
 
     try {
@@ -207,53 +266,60 @@ class StateHydrator<TState> {
     startTime?: number,
   ): Promise<void> {
     try {
-      const state = await this.client.getAllItems();
+      const allItems = await this.client.getAllItems();
+      
+      // Reconstruct the state from granular storage
+      const reconstructedState = {} as any;
+      
+      for (const [key, value] of allItems.entries()) {
+        const parsed = this.keyManager.parseStorageKey(key);
+        
+        if (parsed.path.length === 1) {
+          // Top-level field
+          reconstructedState[parsed.path[0]] = value;
+        } else {
+          // Nested field - reconstruct the object hierarchy
+          let current = reconstructedState;
+          for (let i = 0; i < parsed.path.length - 1; i++) {
+            const segment = parsed.path[i];
+            if (!current[segment] || typeof current[segment] !== 'object') {
+              current[segment] = {};
+            }
+            current = current[segment];
+          }
+          current[parsed.path[parsed.path.length - 1]] = value;
+        }
+      }
 
-      const stateObject = Object.fromEntries(state.entries()) as TState;
       try {
-        onHydrate?.(stateObject);
+        onHydrate?.(reconstructedState as TState);
       } catch (error) {
         this.logger.error(
           'Error in onHydrate callback',
-          error instanceof Error ? error : new Error(String(error)),
+          normalizeError(error),
           { operation: 'hydration' },
         );
       }
 
-      const applyPromises: Promise<void>[] = [];
-
-      for (const [key, value] of state.entries()) {
-        if (this.shouldSkipField(key, value)) {
-          continue;
-        }
-
-        applyPromises.push(applyStateChange({ [key]: value } as Partial<TState>, false, true));
-      }
-
-      await Promise.all(applyPromises);
+      // Apply the reconstructed state
+      await applyStateChange(reconstructedState, false, true);
 
       this.hasHydrated = true;
-      const duration = startTime ? Date.now() - startTime : 0;
+      const duration = startTime ? getCurrentTimestamp() - startTime : 0;
       this.performanceMonitor.recordHydrationTime(duration);
 
       this.logger.info(`Hydrated state from database`, { operation: 'hydration' });
     } catch (error) {
       this.logger.error(
         'Hydration failed',
-        error instanceof Error ? error : new Error(String(error)),
+        normalizeError(error),
         { operation: 'hydration' },
       );
 
       throw new HydrationError('Failed to hydrate state', {
-        error: error instanceof Error ? error.message : String(error),
+        error: normalizeError(error).message,
       });
     }
-  }
-
-  private shouldSkipField(key: string, value: unknown): boolean {
-    return (
-      (typeof value === 'string' && value.length === 0) || value === null || key === 'multiplayer'
-    );
   }
 
   getHydrationStatus(): boolean {
@@ -283,8 +349,8 @@ class SyncQueueManager<TState> {
   addPendingChange(change: Omit<StateChange<TState>, 'timestamp' | 'id'>): void {
     const fullChange: StateChange<TState> = {
       ...change,
-      timestamp: Date.now(),
-      id: this.generateId(),
+      timestamp: getCurrentTimestamp(),
+      id: generateId(),
     };
 
     this.pendingChanges.push(fullChange);
@@ -319,12 +385,12 @@ class SyncQueueManager<TState> {
 
       for (const change of changesToProcess) {
         await applyStateChange(change.partial, change.replace);
-        this.performanceMonitor.recordStateChange();
+        // Note: recordStateChange() is called in applyStateChange() to avoid double counting
       }
     } catch (error) {
       this.logger.error(
         'Error processing offline changes',
-        error instanceof Error ? error : new Error(String(error)),
+        normalizeError(error),
         { operation: 'sync-queue' },
       );
       throw error;
@@ -333,9 +399,7 @@ class SyncQueueManager<TState> {
     }
   }
 
-  private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }
+
 }
 
 // ============================================================================
@@ -343,29 +407,145 @@ class SyncQueueManager<TState> {
 // ============================================================================
 
 /**
- * Detect Record fields in the initial state
+ * Extract all paths to leaf values in an object
  */
-function detectRecordFields<TState>(state: TState): Array<keyof TState> {
-  const recordFields: Array<keyof TState> = [];
+function extractPaths(obj: any, parentPath: string[] = []): Array<{ path: string[]; value: any }> {
+  const paths: Array<{ path: string[]; value: any }> = [];
 
-  for (const [key, value] of Object.entries(state as Record<string, unknown>)) {
-    if (isRecordType(value)) {
-      recordFields.push(key as keyof TState);
+  for (const [key, value] of Object.entries(obj)) {
+    const currentPath = [...parentPath, key];
+    
+    if (value === null || value === undefined || typeof value !== 'object' || Array.isArray(value)) {
+      // Primitive value or array - store as leaf
+      paths.push({ path: currentPath, value });
+    } else if (Object.keys(value).length === 0 && currentPath.length === 1) {
+      // Empty object at depth 1 (like empty todos: {}) - store as leaf
+      // This ensures empty Records are synced, fixing deletion of all entries
+      paths.push({ path: currentPath, value });
+    } else if (currentPath.length >= 2 && isRecordType(value)) {
+      // Record entries at depth 2+ should be atomic to prevent deletion issues
+      paths.push({ path: currentPath, value });
+    } else if (currentPath.length >= 3) {
+      // Non-Record objects at depth 3+ - store as leaf to prevent over-granularization
+      paths.push({ path: currentPath, value });
+    } else {
+      // Object - recurse deeper for regular nested objects
+      paths.push(...extractPaths(value, currentPath));
     }
   }
 
-  return recordFields;
+  return paths;
 }
 
 /**
- * Check if a value is a Record type (plain object with string keys)
+ * Check if a value appears to be a Record type (dynamic keys with similar structure)
  */
-function isRecordType(value: unknown): boolean {
+function isRecordType(value: any): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  
+  const keys = Object.keys(value);
+  if (keys.length === 0) {
+    return false;
+  }
+  
+  // If all keys are non-standard property names (not typical object properties)
+  // and the values have similar structure, it's likely a Record
+  const firstValue = value[keys[0]];
+  if (typeof firstValue === 'object' && firstValue !== null && !Array.isArray(firstValue)) {
+    // Check if all values have similar structure (same keys)
+    const firstKeys = Object.keys(firstValue).sort();
+    return keys.every(key => {
+      const val = value[key];
+      if (typeof val !== 'object' || val === null || Array.isArray(val)) {
+        return false;
+      }
+      const valKeys = Object.keys(val).sort();
+      return firstKeys.length === valKeys.length && firstKeys.every((k, i) => k === valKeys[i]);
+    });
+  }
+  
+  return false;
+}
+
+/**
+ * Detect actual changes between two states by comparing values
+ */
+function detectActualChanges(oldState: any, newState: any, parentPath: string[] = []): Array<{ path: string[]; value: any }> {
+  const changes: Array<{ path: string[]; value: any }> = [];
+  
+  // Extract all paths from the new state
+  const newPaths = extractPaths(newState, parentPath);
+  
+  // For each path in the new state, check if it's actually different
+  for (const { path, value } of newPaths) {
+    // Get the corresponding value from the old state
+    let oldValue = oldState;
+    let pathExists = true;
+    
+    for (const segment of path) {
+      if (oldValue && typeof oldValue === 'object' && segment in oldValue) {
+        oldValue = oldValue[segment];
+      } else {
+        pathExists = false;
+        break;
+      }
+    }
+    
+    // If the path doesn't exist in old state or the value is different, it's a change
+    if (!pathExists || !deepEqual(oldValue, value)) {
+      changes.push({ path, value });
+    }
+  }
+  
+  return changes;
+}
+
+/**
+ * Deep equality check for primitive values and objects
+ */
+function deepEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  
+  if (a == null || b == null) return a === b;
+  
+  if (typeof a !== typeof b) return false;
+  
+  if (typeof a !== 'object') return a === b;
+  
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  
+  if (keysA.length !== keysB.length) return false;
+  
+  for (const key of keysA) {
+    if (!(key in b)) return false;
+    if (!deepEqual(a[key], b[key])) return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Check if a value should be stored granularly (objects but not arrays)
+ */
+function shouldStoreGranularly(value: unknown): boolean {
   return (
     value !== null &&
     typeof value === 'object' &&
-    Object.prototype.toString.call(value) === '[object Object]' &&
-    !Array.isArray(value)
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === '[object Object]'
   );
 }
 
@@ -385,7 +565,7 @@ class MultiplayerOrchestrator<TState> {
 
   // Enhanced granular state management
   private keyManager: StorageKeyManager<TState>;
-  private granularStateManager: GranularStateManager<TState> | null = null;
+  private previousState: TState;
 
   constructor(
     private client: HPKVStorage,
@@ -398,36 +578,15 @@ class MultiplayerOrchestrator<TState> {
 
     this.connectionManager = new StorageManager(this.client, this.logger);
     this.conflictResolver = new ConflictResolver(this.logger);
-    this.stateHydrator = new StateHydrator(this.client, this.logger, this.performanceMonitor);
+    
+    // Initialize key manager
+    this.keyManager = new StorageKeyManager(options.namespace);
+    
+    this.stateHydrator = new StateHydrator(this.client, this.logger, this.performanceMonitor, this.keyManager);
     this.syncQueueManager = new SyncQueueManager(this.logger, this.performanceMonitor);
 
-    // Automatically detect Record fields from initial state
-    const recordFields = detectRecordFields(this.initialState);
-
-    // Create automatic key generators for detected Record fields
-    const autoKeyGenerators: Partial<
-      Record<keyof TState, (field: string, entryKey: string) => string>
-    > = {};
-    for (const field of recordFields) {
-      const fieldKey = field as keyof TState;
-      if (!options.keyGenerators?.[fieldKey]) {
-        autoKeyGenerators[fieldKey] = (fieldName: string, entryKey: string) =>
-          `${options.namespace}:${fieldName}:${entryKey}`;
-      }
-    }
-
-    // Merge custom and automatic key generators
-    const allKeyGenerators = { ...autoKeyGenerators, ...options.keyGenerators };
-
-    // Initialize granular state management
-    this.keyManager = new StorageKeyManager(options.namespace, allKeyGenerators);
-
-    // Always enable granular state manager if we have Record fields
-    if (recordFields.length > 0 || options.keyGenerators) {
-      this.granularStateManager = new GranularStateManager(this.keyManager, this.logger, updates =>
-        this.syncGranularUpdates(updates),
-      );
-    }
+    // Initialize previous state tracking
+    this.previousState = { ...this.api.getState() };
 
     this.setupEventListeners();
   }
@@ -446,38 +605,94 @@ class MultiplayerOrchestrator<TState> {
         clientId: this.client.getClientId(),
       });
 
-      // Parse the storage key to determine if it's a granular update
+      // Parse the storage key to determine the path
       const parsed = this.keyManager.parseStorageKey(event.key);
 
-      if (parsed.isGranular && this.granularStateManager) {
-        // Handle granular updates
-        const update: GranularUpdate = {
-          field: parsed.field,
-          subKey: parsed.subKey,
-          value: event.value,
-          operation: event.value === null ? 'delete' : 'set',
-          storageKey: event.key,
-        };
+      // Get the current state to preserve existing nested properties
+      const currentState = this.api.getState() as any;
+      
+      // Handle deletion or update
+      if (event.value === null) {
+        // For deletions, we need special handling for Record types
+        let stateUpdate: any = {};
+        let current = stateUpdate;
+        let currentStateTraversal = currentState;
+        
+        // Build the path to the deletion point
+        for (let i = 0; i < parsed.path.length - 1; i++) {
+          const pathSegment = parsed.path[i];
+          
+          // If there's an existing nested object at this path, clone it
+          if (currentStateTraversal && typeof currentStateTraversal[pathSegment] === 'object' && !Array.isArray(currentStateTraversal[pathSegment])) {
+            current[pathSegment] = { ...currentStateTraversal[pathSegment] };
+          } else {
+            current[pathSegment] = {};
+          }
+          
+          current = current[pathSegment];
+          currentStateTraversal = currentStateTraversal?.[pathSegment];
+        }
+        
+        const finalKey = parsed.path[parsed.path.length - 1];
+        
+        // For Record type deletions (depth >= 3), check if we should remove the entire parent object
+        if (parsed.path.length >= 3) {
+          // Delete the field from the current object
+          delete current[finalKey];
+          
+          // Now check if the parent object (Record entry) is empty and should be removed
+          const parentRecordKey = parsed.path[parsed.path.length - 2];
+          const grandparentPath = parsed.path.slice(0, -2);
+          
+          // Get the parent object after the deletion
+          let parentObject = current;
+          if (Object.keys(parentObject).length === 0) {
+            // Parent object is empty, remove it from the grandparent (the Record)
+            // Navigate to the grandparent in the state update
+            let grandparentInUpdate = stateUpdate;
+            for (const segment of grandparentPath) {
+              grandparentInUpdate = grandparentInUpdate[segment];
+            }
+            
+            // Remove the empty parent object
+            delete grandparentInUpdate[parentRecordKey];
+          }
+        } else if (parsed.path.length === 1) {
+          // Top-level deletion - use initial state value or delete entirely
+          if ((this.initialState as any)[parsed.path[0]] !== undefined) {
+            stateUpdate[parsed.path[0]] = (this.initialState as any)[parsed.path[0]];
+          } else {
+            delete stateUpdate[parsed.path[0]];
+          }
+        } else {
+          // Nested deletion - delete the property
+          delete current[finalKey];
+        }
 
-        const stateUpdate = this.granularStateManager.applyRemoteGranularUpdate(
-          update,
-          this.api.getState(),
-        );
-
-        await this.applyStateChange(stateUpdate, false, true);
+        await this.applyStateChange(stateUpdate as Partial<TState>, false, true);
       } else {
-        // Handle traditional non-granular updates
-        // If value is null, it means the key was deleted/cleared
-        const updateValue =
-          event.value === null
-            ? (this.api.getInitialState() as Record<string, unknown>)[parsed.field]
-            : event.value;
+        // For updates, reconstruct the state update from the path, preserving existing nested objects
+        let stateUpdate: any = {};
+        let current = stateUpdate;
+        let currentStateTraversal = currentState;
+        
+        for (let i = 0; i < parsed.path.length - 1; i++) {
+          const pathSegment = parsed.path[i];
+          
+          // If there's an existing nested object at this path, clone it
+          if (currentStateTraversal && typeof currentStateTraversal[pathSegment] === 'object' && !Array.isArray(currentStateTraversal[pathSegment])) {
+            current[pathSegment] = { ...currentStateTraversal[pathSegment] };
+          } else {
+            current[pathSegment] = {};
+          }
+          
+          current = current[pathSegment];
+          currentStateTraversal = currentStateTraversal?.[pathSegment];
+        }
+        
+        current[parsed.path[parsed.path.length - 1]] = event.value;
 
-        await this.applyStateChange(
-          { [parsed.field]: updateValue } as Partial<TState>,
-          false,
-          true,
-        );
+        await this.applyStateChange(stateUpdate as Partial<TState>, false, true);
       }
     };
 
@@ -490,13 +705,15 @@ class MultiplayerOrchestrator<TState> {
       if (state === ConnectionState.DISCONNECTED) {
         this.stateBeforeDisconnection = { ...this.api.getState() } as TState;
         this.stateHydrator.resetHydrationStatus();
-        this.updateMultiplayerState({ hasHydrated: false });
+        this.updateMultiplayerState({ hasHydrated: false, isSubscriptionReady: false });
       }
 
       this.updateMultiplayerState({ connectionState: state });
 
       if (state === ConnectionState.CONNECTED) {
         await this.hydrate();
+        // Update subscription ready status after hydration
+        this.updateSubscriptionReadyStatus();
       }
     } catch (error) {
       this.logger.error(
@@ -558,15 +775,23 @@ class MultiplayerOrchestrator<TState> {
   }
 
   async applyStateChange(
-    partial: TState | Partial<TState> | ((state: TState) => TState | Partial<TState>),
+    partial: TState | Partial<TState> | ((state: TState) => TState | Partial<TState>) | { changes: Partial<TState>; deletions: Array<{ path: string[] }> },
     replace?: boolean,
     isRemoteUpdate: boolean = false,
   ): Promise<void> {
     try {
-      const nextState =
-        typeof partial === 'function'
-          ? (partial as (state: TState) => TState | Partial<TState>)(this.api.getState())
-          : partial;
+      let nextState: TState | Partial<TState>;
+      let deletions: Array<{ path: string[] }> = [];
+
+      // Handle the new format with changes and deletions
+      if (typeof partial === 'object' && partial !== null && 'changes' in partial && 'deletions' in partial) {
+        nextState = partial.changes;
+        deletions = partial.deletions;
+      } else if (typeof partial === 'function') {
+        nextState = (partial as (state: TState) => TState | Partial<TState>)(this.api.getState());
+      } else {
+        nextState = partial as TState | Partial<TState>;
+      }
 
       if (replace === true) {
         this.api.setState(nextState as TState, true);
@@ -575,14 +800,15 @@ class MultiplayerOrchestrator<TState> {
       }
 
       this.logger.debug(
-        `Updated local state for '${Object.entries(nextState)
-          .map(([key, value]) => `${key}:${value}`)
-          .join(', ')}'`,
+        `Updated local state for '${JSON.stringify(nextState)}'`,
         { operation: 'state-change', clientId: this.client.getClientId() },
       );
 
       if (!isRemoteUpdate) {
-        await this.syncStateToRemote(nextState as Partial<TState>);
+        await this.syncStateToRemote(nextState as Partial<TState>, deletions);
+      } else {
+        // Update previous state tracking for remote updates
+        this.previousState = { ...this.api.getState() };
       }
 
       this.performanceMonitor.recordStateChange();
@@ -596,53 +822,101 @@ class MultiplayerOrchestrator<TState> {
     }
   }
 
-  private async syncStateToRemote(state: Partial<TState>): Promise<void> {
-    const startTime = Date.now();
+  private async syncStateToRemote(state: Partial<TState>, deletions: Array<{ path: string[] }> = []): Promise<void> {
+    const startTime = getCurrentTimestamp();
 
-    const syncPromises = Object.entries(state).map(async ([key, value]) => {
-      await this.client.setItem(key, value);
+    // Add defensive check for undefined/null state
+    if (!state || typeof state !== 'object') {
+      this.logger.warn(`Attempted to sync undefined or null state: ${state}`, {
+        operation: 'sync-state-to-remote',
+      });
+      return;
+    }
+
+    // Detect actual changes by comparing with previous state
+    const actualChanges = detectActualChanges(this.previousState, state);
+    
+    // Filter out non-serializable entries
+    const serializablePaths = actualChanges.filter(({ path, value }) => {
+      // Skip the multiplayer state
+      if (path[0] === 'multiplayer') {
+        return false;
+      }
+      
+      // Skip functions
+      if (typeof value === 'function') {
+        return false;
+      }
+      
+      // Skip undefined values
+      if (value === undefined) {
+        return false;
+      }
+      
+      return true;
     });
 
-    await Promise.all(syncPromises);
-
-    const duration = Date.now() - startTime;
-    this.performanceMonitor.recordSyncTime(duration);
-  }
-
-  /**
-   * Sync granular updates to remote storage
-   */
-  private async syncGranularUpdates(updates: GranularUpdate[]): Promise<void> {
-    const startTime = Date.now();
-
-    const syncPromises = updates.map(async update => {
-      if (update.operation === 'delete') {
-        // For deletions, we might need to remove the key entirely or set to null
-        await this.client.setItem(`${update.field}:${update.subKey}`, null);
-      } else {
-        await this.client.setItem(`${update.field}:${update.subKey}`, update.value);
-      }
-
+    // Process deletions that were passed in
+    const deletionPromises: Promise<void>[] = [];
+    
+    for (const deletion of deletions) {
+      const storageKey = this.keyManager.createStorageKey(deletion.path);
+      
       this.logger.debug(
-        `Synced granular update for key '${update.storageKey}' (${update.operation})`,
+        `Deleting removed path '${deletion.path.join('.')}' with key '${storageKey}'`,
         {
-          operation: 'granular-sync',
+          operation: 'delete-path',
           clientId: this.client.getClientId(),
         },
       );
+      
+      deletionPromises.push(
+        this.client.setItem(storageKey, null).catch(error => {
+          this.logger.error(
+            `Failed to delete key '${storageKey}'`,
+            normalizeError(error),
+            { operation: 'delete-path', clientId: this.client.getClientId() },
+          );
+        })
+      );
+    }
+
+    // Only proceed if there are serializable changes or deletions
+    if (serializablePaths.length === 0 && deletionPromises.length === 0) {
+      return;
+    }
+
+    // Sync all paths in parallel
+    const syncPromises = serializablePaths.map(({ path, value }) => {
+      const storageKey = this.keyManager.createStorageKey(path);
+      
+      this.logger.debug(
+        `Syncing path '${path.join('.')}' with key '${storageKey}'`,
+        {
+          operation: 'sync-path',
+          clientId: this.client.getClientId(),
+        },
+      );
+      
+      return this.client.setItem(storageKey, value);
     });
 
-    await Promise.all(syncPromises);
+    // Wait for both sync and deletion operations to complete
+    await Promise.all([...syncPromises, ...deletionPromises]);
 
-    const duration = Date.now() - startTime;
+    // Update previous state tracking
+    this.previousState = { ...this.api.getState() };
+
+    const duration = getCurrentTimestamp() - startTime;
     this.performanceMonitor.recordSyncTime(duration);
   }
 
   handleStateChangeRequest(
-    partial: TState | Partial<TState> | ((state: TState) => TState | Partial<TState>),
+    partial: TState | Partial<TState> | ((state: TState) => TState | Partial<TState>) | { changes: Partial<TState>; deletions: Array<{ path: string[] }> },
     replace?: boolean,
   ): void {
     const connectionState = this.connectionManager.getConnectionState();
+    const isHydrated = this.stateHydrator.getHydrationStatus();
 
     if (
       !this.stateHydrator.getHydrationStatus() ||
@@ -658,7 +932,7 @@ class MultiplayerOrchestrator<TState> {
         this.hydrate().catch(error => {
           this.logger.error(
             'Error during auto-hydration',
-            error instanceof Error ? error : new Error(String(error)),
+            normalizeError(error),
             { operation: 'auto-hydration' },
           );
         });
@@ -669,13 +943,13 @@ class MultiplayerOrchestrator<TState> {
     this.applyStateChange(partial, replace, false).catch(error => {
       this.logger.error(
         'Error applying local state change',
-        error instanceof Error ? error : new Error(String(error)),
+        normalizeError(error),
         { operation: 'state-change' },
       );
     });
   }
 
-  private updateMultiplayerState(updates: Partial<MultiplayerState>): void {
+  private updateMultiplayerState(updates: Partial<MultiplayerState<TState>>): void {
     this.api.setState(
       state => ({
         ...state,
@@ -683,6 +957,11 @@ class MultiplayerOrchestrator<TState> {
       }),
       false,
     );
+  }
+
+  private updateSubscriptionReadyStatus(): void {
+    const isReady = this.client.isSubscriptionReady();
+    this.updateMultiplayerState({ isSubscriptionReady: isReady });
   }
 
   async clearStorage(): Promise<void> {
@@ -714,47 +993,6 @@ class MultiplayerOrchestrator<TState> {
     return this.performanceMonitor.getMetrics();
   }
 
-  getSubscriptionPatterns(): string[] {
-    return this.keyManager.getSubscriptionPatterns();
-  }
-
-  /**
-   * Handle draft-style state updates
-   */
-  async handleDraftUpdate(updater: StateUpdater<TState>): Promise<void> {
-    if (!this.granularStateManager) {
-      throw new MultiplayerError(
-        'Draft updates are not available. No Record fields detected in state',
-        'DRAFT_UPDATES_DISABLED',
-        false,
-      );
-    }
-
-    try {
-      const currentState = this.api.getState();
-      const draft = this.granularStateManager.createDraftState(currentState);
-      const result = updater(draft);
-      const finalState = await this.granularStateManager.finalizeDraftUpdates(result || draft);
-
-      // Apply the cleaned state to the store
-      this.api.setState(finalState, false);
-
-      this.logger.debug('Completed draft update', {
-        operation: 'draft-update',
-        clientId: this.client.getClientId(),
-      });
-
-      this.performanceMonitor.recordStateChange();
-    } catch (error) {
-      this.logger.error(
-        'Error during draft update',
-        error instanceof Error ? error : new Error(String(error)),
-        { operation: 'draft-update' },
-      );
-      throw error;
-    }
-  }
-
   async cleanup(): Promise<void> {
     this.logger.info('Cleaning up multiplayer', { operation: 'cleanup' });
 
@@ -764,7 +1002,7 @@ class MultiplayerOrchestrator<TState> {
       } catch (error) {
         this.logger.error(
           'Error during cleanup',
-          error instanceof Error ? error : new Error(String(error)),
+          normalizeError(error),
           { operation: 'cleanup' },
         );
       }
@@ -790,9 +1028,9 @@ type Multiplayer = <
   T,
   Mps extends [StoreMutatorIdentifier, unknown][] = [],
   Mcs extends [StoreMutatorIdentifier, unknown][] = [],
-  U = T & { multiplayer: MultiplayerState },
+  U = T & { multiplayer: MultiplayerState<T> },
 >(
-  initializer: StateCreator<T, [...Mps, ['zustand/multiplayer', unknown]], Mcs>,
+  initializer: ImmerStateCreator<T, [...Mps, ['zustand/multiplayer', unknown]], Mcs, T>,
   options: MultiplayerOptions<T>,
 ) => StateCreator<U, Mps, [['zustand/multiplayer', U], ...Mcs]>;
 
@@ -803,9 +1041,9 @@ declare module 'zustand/vanilla' {
 }
 
 type MultiplayerMiddleware = <TState>(
-  config: StateCreator<TState, [], []>,
+  config: ImmerStateCreator<TState, [], [], TState>,
   options: MultiplayerOptions<TState>,
-) => StateCreator<TState & { multiplayer: MultiplayerState }, [], []>;
+) => StateCreator<TState & { multiplayer: MultiplayerState<TState> }, [], []>;
 
 const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
   if (!options.apiKey && !options.tokenGenerationUrl) {
@@ -818,10 +1056,120 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
   }
 
   type TState = ReturnType<typeof config>;
-  type TStateWithMultiplayer = TState & { multiplayer: MultiplayerState };
+  type TStateWithMultiplayer = TState & { multiplayer: MultiplayerState<TState> };
 
-  const configResult = config(set, get, api);
-  const initialState = (get() || configResult) as Record<string, unknown>;
+  // Store the original setState function for the orchestrator
+  const originalSetState = api.setState;
+  
+  // Create a placeholder orchestrator that will be initialized later
+  let orchestrator: MultiplayerOrchestrator<TState>;
+
+  // Create the real store with the intercepted set function
+  const interceptedSet = <A extends TState | Partial<TState> | ((state: TState) => TState | Partial<TState>) | ((state: Draft<TState>) => void)>(
+    partial: A,
+    replace?: boolean,
+  ) => {
+    // If orchestrator is not initialized yet, just apply the state change directly
+    if (!orchestrator) {
+      if (replace === true) {
+        set(partial as TState & { multiplayer: MultiplayerState<TState> }, true);
+      } else {
+        set(partial as Partial<TState & { multiplayer: MultiplayerState<TState> }>, false);
+      }
+      return;
+    }
+
+    // Handle different types of updates
+    if (typeof partial === 'function') {
+      // Check if it's an immer-style function by looking at its parameter signature
+      const funcString = partial.toString();
+      if (funcString.includes('draft') || funcString.includes('=>')) {
+        // This is an immer-style function - apply it with produce and compute diff
+        const oldState = get() as TState;
+        const nextState = produce(oldState, partial as (state: Draft<TState>) => void);
+        
+        // Compute the diff to get only the changes
+        const changes: Partial<TState> = {};
+        for (const key in nextState) {
+          if (nextState[key] !== oldState[key]) {
+            changes[key] = nextState[key];
+          }
+        }
+        
+        // Detect granular deletions for each changed field
+        const deletions: Array<{ path: string[]; }> = [];
+        for (const [field, newValue] of Object.entries(changes)) {
+          if (field === 'multiplayer' || typeof newValue === 'function') {
+            continue;
+          }
+          
+          // Check if this field supports granular storage (objects but not arrays)
+          if (shouldStoreGranularly(newValue)) {
+            // Get the old value for this field
+            const oldFieldValue = (oldState as any)[field];
+            
+            // If the old field also supports granular storage, check for deletions
+            if (shouldStoreGranularly(oldFieldValue)) {
+              const oldPaths = extractPaths({ [field]: oldFieldValue });
+              const newPaths = extractPaths({ [field]: newValue });
+              
+              // Create sets of path strings for comparison
+              const oldPathSet = new Set(oldPaths.map(p => p.path.join(':')));
+              const newPathSet = new Set(newPaths.map(p => p.path.join(':')));
+              
+              // Find paths that exist in old but not in new (deletions)
+              const deletedPaths = Array.from(oldPathSet).filter(path => {
+                if (newPathSet.has(path)) {
+                  return false; // Not deleted
+                }
+                
+                // Check if this is a parent path of any new path
+                // If so, it's transitioning from leaf to granular storage, not truly deleted
+                const pathPrefix = path + ':';
+                for (const newPath of newPathSet) {
+                  if (newPath.startsWith(pathPrefix)) {
+                    return false; // This is a parent of a new granular path
+                  }
+                }
+                
+                return true; // Truly deleted
+              });
+              
+              // Add to deletions list
+              for (const deletedPath of deletedPaths) {
+                const pathSegments = deletedPath.split(':');
+                deletions.push({ path: pathSegments });
+              }
+            }
+          }
+        }
+        
+        // Pass both changes and deletions to the orchestrator
+        orchestrator.handleStateChangeRequest({ changes, deletions } as any, replace);
+      } else {
+        // This is a regular zustand function - pass it through
+        orchestrator.handleStateChangeRequest(partial as (state: TState) => TState | Partial<TState>, replace);
+      }
+    } else {
+      // Handle non-function updates (objects)
+      orchestrator.handleStateChangeRequest(partial as TState | Partial<TState>, replace);
+    }
+  };
+
+  // Replace the api.setState with the intercepted version for the final store
+  api.setState = interceptedSet;
+
+  // Create a wrapped API that provides the enhanced set function
+  const wrappedApi = {
+    setState: interceptedSet,
+    getState: () => get() as TState,
+    subscribe: api.subscribe,
+  };
+
+  const store = config(interceptedSet, () => get() as TState, wrappedApi);
+
+  // Now get the initial state from the store
+  const initialState = (get() || store) as Record<string, unknown>;
   const nonFunctionKeys = Object.keys(initialState).filter(
     key => typeof initialState[key] !== 'function',
   ) as Array<keyof TState>;
@@ -843,14 +1191,18 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
 
   const logger = createLogger(syncOptions.logLevel ?? LogLevel.INFO);
 
-  // Generate subscription patterns - orchestrator will handle Record detection internally
-  // Use broad pattern-based subscriptions to catch all potential granular updates
-  const subscribedKeysArray: string[] = [
-    // Traditional field subscriptions
-    ...syncOptions.subscribeToUpdatesFor!().map(key => String(key)),
-  ];
+  // Build subscription patterns based on subscribeToUpdatesFor configuration
+  const subscribedFields = syncOptions.subscribeToUpdatesFor!();
+  const pathPatterns = new Set<string>();
+  
+  // For each subscribed field, add the field itself and wildcard pattern for nested values
+  subscribedFields.forEach(key => {
+    const keyStr = String(key);
+    pathPatterns.add(keyStr); // Add the field itself
+    pathPatterns.add(`${keyStr}:*`); // Add wildcard for all nested values
+  });
 
-  // Pass just the field names, not full keys - HPKVStorage will add namespace prefix
+  const subscribedKeysArray = Array.from(pathPatterns);
   const publishedKeysArray = syncOptions.publishUpdatesFor!().map(key => String(key));
 
   const hpkvStorageOptions: HPKVStorageOptions = {
@@ -869,32 +1221,28 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
     logger,
   );
 
-  const orchestrator = new MultiplayerOrchestrator(client, syncOptions, api as any, configResult);
-
-  const multiplayerState: MultiplayerState = {
-    connectionState: ConnectionState.DISCONNECTED,
-    hasHydrated: false,
-    hydrate: () => orchestrator.hydrate(),
-    clearStorage: () => orchestrator.clearStorage(),
-    disconnect: () => orchestrator.disconnect(),
-    connect: () => orchestrator.connect(),
-    destroy: () => orchestrator.destroy(),
-    getConnectionStatus: () => orchestrator.getConnectionStatus(),
-    getMetrics: () => orchestrator.getMetrics(),
-    updateDraft: <T extends Record<string, unknown>>(updater: StateUpdater<T>) =>
-      orchestrator.handleDraftUpdate(updater as StateUpdater<TState>),
+  // Create a modified API for the orchestrator that uses the original setState
+  // This prevents circular dependencies
+  const orchestratorApi = {
+    ...api,
+    setState: originalSetState,
   };
 
-  const store = config(
-    <A extends TState | Partial<TState> | ((state: TState) => TState | Partial<TState>)>(
-      partial: A,
-      replace?: boolean,
-    ) => {
-      orchestrator.handleStateChangeRequest(partial as any, replace);
-    },
-    get,
-    api,
-  );
+  // Now initialize the orchestrator with the original setState
+  orchestrator = new MultiplayerOrchestrator(client, syncOptions, orchestratorApi as any, store);
+
+      const multiplayerState: MultiplayerState<TState> = {
+      connectionState: ConnectionState.DISCONNECTED,
+      hasHydrated: false,
+      isSubscriptionReady: false,
+      hydrate: () => orchestrator.hydrate(),
+      clearStorage: () => orchestrator.clearStorage(),
+      disconnect: () => orchestrator.disconnect(),
+      connect: () => orchestrator.connect(),
+      destroy: () => orchestrator.destroy(),
+      getConnectionStatus: () => orchestrator.getConnectionStatus(),
+      getMetrics: () => orchestrator.getMetrics(),
+    };
 
   const storeWithMultiplayer = {
     ...store,
@@ -904,9 +1252,6 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
         client?.getConnectionStatus()?.connectionState ?? ConnectionState.DISCONNECTED,
       hasHydrated: false,
     },
-    // Add updateDraft method directly to the store state
-    updateDraft: <T extends Record<string, unknown>>(updater: StateUpdater<T>) =>
-      orchestrator.handleDraftUpdate(updater as StateUpdater<TState>),
   } as TStateWithMultiplayer;
 
   void orchestrator.hydrate().catch(error => {
@@ -923,408 +1268,73 @@ const impl: MultiplayerMiddleware = (config, options) => (set, get, api) => {
 
 export const multiplayer = impl as unknown as Multiplayer;
 
+
+
 // ============================================================================
 // USAGE EXAMPLES
 // ============================================================================
 
 /**
- * Enhanced Zustand Multiplayer Middleware Usage Examples
+ * Enhanced Zustand Multiplayer Middleware with Unified Granular Storage
  *
- * @example Basic Usage with Automatic Record Detection
+ * @example Basic Usage with Automatic Granular Storage
  * ```typescript
- * interface TodoState {
- *   todos: Record<string, Todo>;  // Automatically detected and uses granular storage
- *   user: { name: string; email: string };
- *   settings: { theme: string; notifications: boolean };
+ * interface AppState {
+ *   user: { 
+ *     name: string; 
+ *     email: string;
+ *     settings: {
+ *       theme: string;
+ *       notifications: boolean;
+ *     }
+ *   };
+ *   todos: Record<string, Todo>;  // Granular storage for dictionary
+ *   items: string[];              // Arrays stored as single value
+ *   count: number;
  * }
  *
- * const useTodoStore = create(
+ * const useAppStore = create(
  *   multiplayer(
  *     (set, get) => ({
- *       todos: {},  // Record type automatically gets granular storage
- *       user: { name: '', email: '' },
- *       settings: { theme: 'light', notifications: true },
+ *       user: { 
+ *         name: '', 
+ *         email: '',
+ *         settings: { theme: 'light', notifications: true }
+ *       },
+ *       todos: {},
+ *       items: [],
+ *       count: 0,
  *
- *       // Traditional methods still work
- *       addTodo: (todo: Todo) => set(state => ({
- *         todos: { ...state.todos, [todo.id]: todo }
- *       })),
+ *       // Immer-style updates work seamlessly
+ *       updateUserName: (name: string) => set(draft => {
+ *         draft.user.name = name; // Stored as 'namespace:user:name'
+ *       }),
  *
- *       updateUser: (updates: Partial<User>) => set(state => ({
- *         user: { ...state.user, ...updates }
- *       })),
+ *       updateTheme: (theme: string) => set(draft => {
+ *         draft.user.settings.theme = theme; // Stored as 'namespace:user:settings:theme'
+ *       }),
+ *
+ *       addTodo: (todo: Todo) => set(draft => {
+ *         draft.todos[todo.id] = todo; // Stored as 'namespace:todos:${todo.id}'
+ *       }),
+ *
+ *       addItem: (item: string) => set(draft => {
+ *         draft.items.push(item); // Entire array stored as 'namespace:items'
+ *       }),
  *     }),
  *     {
- *       namespace: 'todo-app',
+ *       namespace: 'my-app',
  *       apiBaseUrl: 'https://api.hpkv.io',
  *       apiKey: 'your-api-key',
- *       // Custom key generators are optional - defaults are provided
- *       keyGenerators: {
- *         todos: (field, entryKey) => `todo-app:todos:${entryKey}`,
- *       }
- *     }
- *   )
- * );
- *
- * // Usage with granular updates - no conflicts between users!
- * const { updateDraft } = useTodoStore.getState().multiplayer;
- *
- * // Update specific todos without affecting other users' concurrent edits
- * await updateDraft(draft => {
- *   // User A can edit todo-1 while User B edits todo-2 simultaneously
- *   draft.todos['todo-1'] = {
- *     id: 'todo-1',
- *     text: 'Updated by User A',
- *     completed: true
- *   };
- *
- *   // Remove a todo
- *   draft.todos.__granular_delete__('todo-3');
- *
- *   // Add a new todo
- *   draft.todos['todo-4'] = {
- *     id: 'todo-4',
- *     text: 'New todo',
- *     completed: false
- *   };
- * });
- * ```
- *
- * @example Advanced Configuration with Custom Key Generators
- * ```typescript
- * const useAdvancedStore = create(
- *   multiplayer(
- *     (set, get) => ({
- *       users: {} as Record<string, User>,     // Auto-detected Record type
- *       projects: {} as Record<string, Project>, // Auto-detected Record type
- *       metadata: { version: 1, lastUpdated: Date.now() } // Regular field
- *     }),
- *     {
- *       namespace: 'collaboration-app',
- *       apiBaseUrl: 'https://api.hpkv.io',
- *       apiKey: 'your-api-key',
- *       // Override default key generation for specific fields
- *       keyGenerators: {
- *         users: (field, entryKey) => `app:user:${entryKey}`,
- *         projects: (field, entryKey) => `app:project:${entryKey}`,
- *       }
  *     }
  *   )
  * );
  * ```
  *
- * @example Pattern-Based Subscriptions
- * With automatic Record detection, the middleware automatically generates
- * HPKV subscription patterns for detected Record fields:
- *
- * - "namespace:*" - Subscribe to all namespace keys
- * - "namespace:todos:*" - Subscribe to all todo items
- * - "namespace:users:*" - Subscribe to all user items
- *
- * This enables dynamic subscription to new keys as they're created.
+ * @example Benefits of Unified Granular Storage:
+ * 1. **Reduced Conflicts**: Different parts of nested objects can be updated independently
+ * 2. **Better Performance**: Only changed leaf values are synced
+ * 3. **Natural Immer Integration**: Works perfectly with draft mutations
+ * 4. **Automatic**: No configuration needed - all objects stored granularly
+ * 5. **Arrays as Primitives**: Arrays are stored as single values for consistency
  */
-
-// ============================================================================
-// GRANULAR UPDATE TYPES
-// ============================================================================
-
-/**
- * Represents a granular update to a specific field
- */
-export interface GranularUpdate<T = any> {
-  /** The field being updated */
-  field: string;
-  /** The sub-key within the field (for Record types) */
-  subKey?: string;
-  /** The new value */
-  value: T;
-  /** The operation type */
-  operation: 'set' | 'delete' | 'patch';
-  /** The full storage key */
-  storageKey: string;
-}
-
-/**
- * Draft-like interface for Immer-style updates
- */
-export type DraftState<T> = {
-  [K in keyof T]: T[K] extends Record<string, infer V>
-    ? Record<string, V> & {
-        __granular_set__(key: string, value: V): void;
-        __granular_delete__(key: string): void;
-      }
-    : T[K];
-};
-
-/**
- * Update function that receives a draft state
- */
-export type StateUpdater<T> = (draft: DraftState<T>) => void | DraftState<T>;
-
-/**
- * Storage key utilities
- */
-export class StorageKeyManager<TState> {
-  constructor(
-    private namespace: string,
-    private config?: Partial<Record<keyof TState, (field: string, entryKey: string) => string>>,
-  ) {}
-
-  /**
-   * Generate storage key for a field
-   */
-  getFieldKey(field: keyof TState): string {
-    return `${this.namespace}:${String(field)}`;
-  }
-
-  /**
-   * Generate storage key for a record entry
-   */
-  getRecordEntryKey(field: keyof TState, entryKey: string): string {
-    const customGenerator = this.config?.[field];
-    if (customGenerator) {
-      return customGenerator(String(field), entryKey);
-    }
-    return `${this.namespace}:${String(field)}:${entryKey}`;
-  }
-
-  /**
-   * Generate subscription patterns for granular fields
-   */
-  getSubscriptionPatterns(): string[] {
-    const patterns: string[] = [`${this.namespace}:*`];
-
-    if (this.config) {
-      for (const field in this.config) {
-        patterns.push(`${this.namespace}:${String(field)}:*`);
-      }
-    }
-
-    return patterns;
-  }
-
-  /**
-   * Parse a storage key to extract field and subkey information
-   */
-  parseStorageKey(storageKey: string): { field: string; subKey?: string; isGranular: boolean } {
-    //const prefix = `${this.namespace}:`;
-    /* if (!storageKey.startsWith(prefix)) {
-      return { field: storageKey, isGranular: false };
-    } */
-
-    const keyParts = storageKey.split(':');
-    if (keyParts.length === 1) {
-      return { field: keyParts[0], isGranular: false };
-    }
-
-    const [field, ...subKeyParts] = keyParts;
-    return {
-      field,
-      subKey: subKeyParts.join(':'),
-      isGranular: true,
-    };
-  }
-
-  /**
-   * Check if a field should use record-based storage
-   */
-  isRecordField(field: keyof TState): boolean {
-    return this.config?.[field] !== undefined;
-  }
-
-  /**
-   * Check if a field should use nested object storage
-   */
-  isNestedObjectField(field: keyof TState): boolean {
-    return this.config?.[field] !== undefined;
-  }
-}
-
-// ============================================================================
-// GRANULAR STATE MANAGER
-// ============================================================================
-
-/**
- * Manages granular state updates and creates draft states
- */
-export class GranularStateManager<TState> {
-  private pendingUpdates: Map<string, GranularUpdate> = new Map();
-  private isInDraftMode = false;
-
-  constructor(
-    private keyManager: StorageKeyManager<TState>,
-    private logger: Logger,
-    private syncToRemote: (updates: GranularUpdate[]) => Promise<void>,
-  ) {}
-
-  /**
-   * Create a draft state for Immer-like updates
-   */
-  createDraftState(currentState: TState): DraftState<TState> {
-    this.isInDraftMode = true;
-    this.pendingUpdates.clear();
-
-    const draft = { ...currentState } as any;
-
-    // Enhance record fields with granular update methods
-    for (const [key, value] of Object.entries(currentState as Record<string, unknown>)) {
-      const fieldKey = key as keyof TState;
-
-      if (this.keyManager.isRecordField(fieldKey) && typeof value === 'object' && value !== null) {
-        draft[key] = this.createRecordProxy(fieldKey, value as Record<string, any>);
-      }
-    }
-
-    return draft as DraftState<TState>;
-  }
-
-  /**
-   * Create a proxy for Record fields to track granular changes
-   */
-  private createRecordProxy<V>(
-    field: keyof TState,
-    record: Record<string, V>,
-  ): Record<string, V> & {
-    __granular_set__(key: string, value: V): void;
-    __granular_delete__(key: string): void;
-  } {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const granularStateManager = this;
-
-    return new Proxy(
-      {
-        ...record,
-        __granular_set__(key: string, value: V): void {
-          granularStateManager.addPendingUpdate(field, key, value, 'set');
-        },
-        __granular_delete__(key: string): void {
-          granularStateManager.addPendingUpdate(field, key, undefined, 'delete');
-        },
-      } as any,
-      {
-        set(target, prop, value) {
-          if (typeof prop === 'string' && !prop.startsWith('__granular_')) {
-            granularStateManager.addPendingUpdate(field, prop, value, 'set');
-          }
-          target[prop] = value;
-          return true;
-        },
-        deleteProperty(target, prop) {
-          if (typeof prop === 'string' && !prop.startsWith('__granular_')) {
-            granularStateManager.addPendingUpdate(field, prop, undefined, 'delete');
-          }
-          delete target[prop];
-          return true;
-        },
-      },
-    );
-  }
-
-  /**
-   * Add a pending update
-   */
-  private addPendingUpdate<V>(
-    field: keyof TState,
-    subKey?: string,
-    value?: V,
-    operation: 'set' | 'delete' | 'patch' = 'set',
-  ): void {
-    const storageKey = subKey
-      ? this.keyManager.getRecordEntryKey(field, subKey)
-      : this.keyManager.getFieldKey(field);
-
-    const update: GranularUpdate<V> = {
-      field: String(field),
-      subKey,
-      value: value as V,
-      operation,
-      storageKey,
-    };
-
-    this.pendingUpdates.set(storageKey, update);
-  }
-
-  /**
-   * Apply pending updates and return the modified state
-   */
-  async finalizeDraftUpdates(draftState: DraftState<TState>): Promise<TState> {
-    try {
-      const updates = Array.from(this.pendingUpdates.values());
-
-      if (updates.length > 0) {
-        this.logger.debug(`Applying ${updates.length} granular updates`, {
-          operation: 'granular-update',
-        });
-
-        // Sync to remote storage
-        await this.syncToRemote(updates);
-      }
-
-      // Clean up proxy methods from the state
-      const cleanState = this.cleanDraftState(draftState);
-      return cleanState;
-    } finally {
-      this.isInDraftMode = false;
-      this.pendingUpdates.clear();
-    }
-  }
-
-  /**
-   * Clean proxy methods from draft state
-   */
-  private cleanDraftState(draftState: DraftState<TState>): TState {
-    const cleanState = { ...draftState } as any;
-
-    for (const [key, value] of Object.entries(cleanState)) {
-      if (typeof value === 'object' && value !== null && '__granular_set__' in value) {
-        const { __granular_set__, __granular_delete__, ...cleanRecord } = value as any;
-        cleanState[key] = cleanRecord;
-      }
-    }
-
-    return cleanState as TState;
-  }
-
-  /**
-   * Apply remote granular updates to local state
-   */
-  applyRemoteGranularUpdate(update: GranularUpdate, currentState: TState): Partial<TState> {
-    const { field, subKey, value, operation } = update;
-    const currentValue = (currentState as any)[field];
-
-    if (!subKey) {
-      // Simple field update
-      return { [field]: value } as Partial<TState>;
-    }
-
-    // Record field update
-    if (typeof currentValue === 'object' && currentValue !== null) {
-      const newRecord = { ...currentValue };
-
-      if (operation === 'delete') {
-        delete newRecord[subKey];
-      } else {
-        newRecord[subKey] = value;
-      }
-
-      return { [field]: newRecord } as Partial<TState>;
-    }
-
-    // Initialize empty record if field doesn't exist
-    return { [field]: { [subKey]: value } } as Partial<TState>;
-  }
-
-  /**
-   * Check if currently in draft mode
-   */
-  isDraftMode(): boolean {
-    return this.isInDraftMode;
-  }
-
-  /**
-   * Get pending updates (for debugging)
-   */
-  getPendingUpdates(): GranularUpdate[] {
-    return Array.from(this.pendingUpdates.values());
-  }
-}

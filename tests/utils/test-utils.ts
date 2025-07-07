@@ -2,7 +2,6 @@ import http from 'http';
 import { expect } from 'vitest';
 import { TokenHelper } from '../../src/token-helper';
 import { PerformanceMetrics } from '../../src/profiler';
-import { LogLevel } from '../../src/logger';
 
 // Helper function to wait for conditions
 export async function waitFor(

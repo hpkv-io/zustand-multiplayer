@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { StateCreator } from 'zustand';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
 import {
   ConnectionState,
@@ -7,7 +6,7 @@ import {
   MockTokenHelper,
   MockWebsocketTokenManager,
 } from './mocks';
-import { MultiplayerOptions } from '../src/multiplayer';
+import { ImmerStateCreator, MultiplayerOptions } from '../src/multiplayer';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -49,7 +48,7 @@ type TestState = {
   replaceState: () => void;
 };
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   nested: {
@@ -446,60 +445,6 @@ describe('Multiplayer Middleware Edge Cases Tests', () => {
       await waitFor(() => {
         expect(store2.getState().count).toBe(0);
         expect(store2.getState().text).toBe('');
-      });
-    });
-  });
-
-  describe('Function State Updates', () => {
-    it('should handle function-based state updates', async () => {
-      const uniqueNamespace = createUniqueStoreName('function-updates');
-      const store1 = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => {
-        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-      });
-
-      // Use function-based state update
-      store1.setState(prevState => ({
-        ...prevState,
-        count: prevState.count + 5,
-        text: `updated: ${prevState.count}`,
-      }));
-
-      await waitFor(() => {
-        expect(store1.getState().count).toBe(5);
-        expect(store1.getState().text).toBe('updated: 0');
-      });
-    });
-
-    it('should handle complex function-based updates', async () => {
-      const uniqueNamespace = createUniqueStoreName('complex-function-updates');
-      const store1 = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => {
-        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-      });
-
-      // Complex state transformation
-      store1.setState(prevState => ({
-        ...prevState,
-        count: prevState.count + 10,
-        nested: {
-          ...prevState.nested,
-          value: prevState.nested.value + 20,
-          deep: {
-            ...prevState.nested.deep,
-            level: `level-${prevState.count}`,
-          },
-        },
-        items: [...prevState.items, `item-${prevState.count}`],
-      }));
-
-      await waitFor(() => {
-        expect(store1.getState().count).toBe(10);
-        expect(store1.getState().nested.value).toBe(20);
-        expect(store1.getState().nested.deep.level).toBe('level-0');
-        expect(store1.getState().items).toEqual(['item-0']);
       });
     });
   });

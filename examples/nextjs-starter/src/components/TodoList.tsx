@@ -13,7 +13,7 @@ const TodoList: React.FC<TodoListProps> = ({ filter }) => {
   const toggleTodo = useTodoStore(state => state.toggleTodo);
   const removeTodo = useTodoStore(state => state.removeTodo);
 
-  const filteredTodos = todos.filter(todo => {
+  const filteredTodos = Object.values(todos).filter(todo => {
     if (filter === 'all') return true;
     if (filter === 'active') return !todo.completed;
     if (filter === 'completed') return todo.completed;

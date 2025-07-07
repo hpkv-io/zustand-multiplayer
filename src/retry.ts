@@ -1,4 +1,5 @@
 import { Logger } from './logger';
+import { normalizeError, createDelay, getCurrentTimestamp } from './utils';
 
 // ============================================================================
 // RETRY CONFIGURATION TYPES
@@ -55,7 +56,7 @@ export class RetryManager {
 
   async executeWithRetry<T>(operation: () => Promise<T>, operationName: string): Promise<T> {
     if (this.circuitBreakerOpen) {
-      const timeSinceLastFailure = Date.now() - this.lastFailureTime;
+      const timeSinceLastFailure = getCurrentTimestamp() - this.lastFailureTime;
       if (timeSinceLastFailure < this.config.maxDelay) {
         throw new CircuitBreakerError(`Circuit breaker open for ${operationName}`, {
           operationName,
@@ -75,12 +76,12 @@ export class RetryManager {
         this.circuitBreakerOpen = false;
         return result;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        lastError = normalizeError(error);
         this.failureCount++;
-        this.lastFailureTime = Date.now();
+        this.lastFailureTime = getCurrentTimestamp();
 
         this.logger.warn(
-          `${operationName} failed (attempt ${attempt + 1}/${this.config.maxRetries + 1})`,
+          `${operationName} failed (attempt ${attempt + 1}/${this.config.maxRetries + 1}) : ${lastError?.message}`,
           { operation: operationName },
         );
 
@@ -94,7 +95,7 @@ export class RetryManager {
           this.config.maxDelay,
         );
 
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await createDelay(delay);
       }
     }
 

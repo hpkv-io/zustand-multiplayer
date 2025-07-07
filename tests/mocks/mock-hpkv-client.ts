@@ -246,12 +246,14 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     const value = globalHPKVStore.get(key);
-
+    if (!value) {
+      return { code: 404, error: 'Key not found' };
+    }
     return {
       code: 200,
       success: true,
       key,
-      value: value ?? null,
+      value: value,
     };
   }
 
@@ -271,6 +273,29 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
 
     // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
+
+    // Check if this is a deletion request (when value contains null in the stored value)
+    try {
+      const parsedValue = JSON.parse(value);
+      if (parsedValue && typeof parsedValue === 'object' && parsedValue.value === null) {
+        // This is a deletion request - remove the key from storage
+        const existed = globalHPKVStore.has(key);
+        globalHPKVStore.delete(key);
+        
+        if (existed) {
+          // Broadcast deletion to other clients
+          broadcastChange(key, null, this.clientId);
+        }
+        
+        return {
+          code: 200,
+          success: true,
+          key,
+        };
+      }
+    } catch {
+      // If not JSON or parsing fails, continue with normal set operation
+    }
 
     if (partialUpdate && globalHPKVStore.has(key)) {
       // Simulate JSON patching for partial updates

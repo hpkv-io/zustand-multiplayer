@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, afterAll, beforeEach, afterEach } from 'vitest';
-import { MultiplayerOptions } from '../src/multiplayer';
+import { ImmerStateCreator, MultiplayerOptions } from '../src/multiplayer';
 import { LogLevel } from '../src/logger';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
 
-import { StateCreator } from 'zustand';
 import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';
 import { MockWebsocketTokenManager } from './mocks/mock-token-manager';
 import { MockTokenHelper } from './mocks/mock-token-manager';
@@ -43,7 +42,7 @@ type TestState = {
   updateLanguage: (language: string) => void;
 };
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   settings: {

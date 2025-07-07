@@ -1,4 +1,5 @@
-import { HPKVApiClient, HPKVClientFactory, WebsocketTokenManager } from '@hpkv/websocket-client';
+import { WebsocketTokenManager } from '@hpkv/websocket-client';
+import { escapeRegExp, createGenericHandler } from './utils';
 
 /**
  * Request format for token generation endpoint
@@ -7,7 +8,7 @@ export interface TokenRequest {
   /** Store name to generate token for */
   namespace: string;
   /** Keys to subscribe to */
-  subscribedKeys: string[];
+  subscribedKeysAndPatterns: string[];
 }
 
 /**
@@ -25,8 +26,6 @@ export interface TokenResponse {
  */
 export class TokenHelper {
   private tokenManager: WebsocketTokenManager;
-  private apiKey: string;
-  private baseUrl: string;
 
   /**
    * Creates a new TokenHelper instance
@@ -36,45 +35,28 @@ export class TokenHelper {
    */
   constructor(apiKey: string, baseUrl: string) {
     this.tokenManager = new WebsocketTokenManager(apiKey, baseUrl);
-    this.apiKey = apiKey;
-    this.baseUrl = baseUrl;
   }
 
   /**
-   * Generates a WebSocket token for a store with pattern support
-   *
-   * @param namespace The namespace for the store
-   * @param subscribedKeys Array of exact keys or patterns to subscribe to
-   * @returns A WebSocket token
+   * Generate a token for a store with the given namespace and keys
    */
-  async generateTokenForStore(namespace: string, subscribedKeys: string[]): Promise<string> {
-    let apiClient: HPKVApiClient | null = null;
-    try {
-      apiClient = HPKVClientFactory.createApiClient(this.apiKey, this.baseUrl);
-      await apiClient.connect();
-      // Check if the store exists, create it if not
-      for (const key of subscribedKeys) {
-        const result = await apiClient.get(key).catch(() => null);
-        if (!result?.key || result.key !== key) {
-          await apiClient.set(key, { value: '' });
-        }
-      }
-      const allSubscribedKeys = [...subscribedKeys, ...subscribedKeys.map(key => `${key}:*`)];
-      // Generate token with access limited to this store key
-      const token = await this.tokenManager.generateToken({
-        subscribeKeys: allSubscribedKeys,
-        accessPattern: `^${escapeRegExp(namespace)}:.*$`,
-      });
-      console.log('token generated for namespace ', namespace, ' with token ', token);
-      return token;
-    } catch (error) {
-      throw new Error(`Failed to generate token for namespace ${namespace}: ${error}`);
-    } finally {
-      if (apiClient && apiClient.getConnectionStats().isConnected) {
-        await apiClient.disconnect();
-        apiClient.destroy();
-      }
-    }
+  async generateTokenForStore(namespace: string, subscribedKeysAnPatterns: string[]): Promise<string> {
+    // Separate exact keys from patterns
+    const exactKeys = subscribedKeysAnPatterns.filter(key => !key.includes('*'));
+    const patterns = subscribedKeysAnPatterns.filter(key => key.includes('*'));
+    
+    // Add wildcard patterns for exact keys that don't already have them
+    const additionalPatterns = exactKeys
+      .filter(key => !patterns.some(p => p.startsWith(key)))
+      .map(key => `${key}:*`);
+        
+    const token = await this.tokenManager.generateToken({
+      subscribeKeys: exactKeys,
+      subscribePatterns: [...patterns, ...additionalPatterns],
+      accessPattern: `^${escapeRegExp(namespace)}:.*$`,
+    });
+    
+    return token;
   }
 
   /**
@@ -100,14 +82,14 @@ export class TokenHelper {
       }
 
       // Validate the request
-      const { namespace, subscribedKeys } = parsedRequest;
+      const { namespace, subscribedKeysAndPatterns } = parsedRequest;
 
       if (!namespace || typeof namespace !== 'string') {
         throw new Error('Invalid request: namespace is required and must be a string');
       }
 
       // Generate the token
-      const token = await this.generateTokenForStore(namespace, subscribedKeys || []);
+      const token = await this.generateTokenForStore(namespace, subscribedKeysAndPatterns || []);
 
       // Return the response
       return { namespace, token };
@@ -122,55 +104,20 @@ export class TokenHelper {
    * @returns A function that can be used as an Express route handler
    */
   createExpressHandler() {
-    return async (req: any, res: any) => {
-      try {
-        const response = await this.processTokenRequest(req.body);
-        res.json(response);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        res.status(400).json({ error: message });
-      }
-    };
+    return createGenericHandler(this.processTokenRequest.bind(this)).express();
   }
 
   /**
    * Create a handler for Next.js API routes
    */
   createNextApiHandler() {
-    return async (req: any, res: any) => {
-      try {
-        if (req.method !== 'POST') {
-          return res.status(405).json({ error: 'Method not allowed' });
-        }
-
-        const response = await this.processTokenRequest(req.body);
-        res.status(200).json(response);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        res.status(400).json({ error: message });
-      }
-    };
+    return createGenericHandler(this.processTokenRequest.bind(this)).nextjs();
   }
 
   /**
    * Create a handler for Fastify
    */
   createFastifyHandler() {
-    return async (request: any, reply: any) => {
-      try {
-        const response = await this.processTokenRequest(request.body);
-        return reply.send(response);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return reply.code(400).send({ error: message });
-      }
-    };
+    return createGenericHandler(this.processTokenRequest.bind(this)).fastify();
   }
-}
-
-/**
- * Escapes special characters in a string for use in a regular expression
- */
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

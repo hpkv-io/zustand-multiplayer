@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterAll } from 'vitest';
 import { StateCreator } from 'zustand';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
 import { MockHPKVClientFactory, MockTokenHelper, MockWebsocketTokenManager } from './mocks';
-import { MultiplayerOptions } from '../src/multiplayer';
+import { ImmerStateCreator, MultiplayerOptions } from '../src/multiplayer';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -32,7 +32,7 @@ type TestState = {
   setText: (text: string) => void;
 };
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   nested: { value: 0 },

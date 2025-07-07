@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@hpkv/zustand-multiplayer": "^0.3.0",
+    "@hpkv/zustand-multiplayer": "file:../../hpkv-zustand-multiplayer-0.3.2.tgz",
     "next": "15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
