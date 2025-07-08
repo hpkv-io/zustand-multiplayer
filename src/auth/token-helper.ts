@@ -1,5 +1,5 @@
 import { WebsocketTokenManager } from '@hpkv/websocket-client';
-import { escapeRegExp, createGenericHandler } from './utils';
+import { escapeRegExp, createGenericHandler } from '../utils';
 
 /**
  * Request format for token generation endpoint

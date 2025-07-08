@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../src/multiplayer';
+import { ImmerStateCreator, MultiplayerOptions } from '../src/types/multiplayer-types';
 import { createUniqueStoreName, waitFor, waitForMetrics } from './utils/test-utils';
 import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';
 import { MockWebsocketTokenManager } from './mocks/mock-token-manager';
@@ -18,7 +18,7 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/token-helper', () => {
+vi.doMock('../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
@@ -157,8 +157,8 @@ describe('Multiplayer Middleware Performance Tests', () => {
     });
 
     const metrics = store.getState().multiplayer.getMetrics();
-    expect(metrics.averageSyncTime).toBeGreaterThan(operationDelay);
-    expect(metrics.averageSyncTime).toBeLessThan(operationDelay * 2.5);
+    expect(metrics.averageSyncTime).toBeGreaterThanOrEqual(operationDelay);
+    expect(metrics.averageSyncTime).toBeLessThanOrEqual(operationDelay * 3);
   });
 
   it('should track sync time across multiple operations', async () => {

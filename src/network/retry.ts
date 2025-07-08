@@ -1,5 +1,5 @@
-import { Logger } from './logger';
-import { normalizeError, createDelay, getCurrentTimestamp } from './utils';
+import { Logger } from '../monitoring/logger';
+import { normalizeError, createDelay, getCurrentTimestamp } from '../utils';
 
 // ============================================================================
 // RETRY CONFIGURATION TYPES

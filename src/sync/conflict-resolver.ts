@@ -1,5 +1,5 @@
-import { Logger } from './logger';
-import { generateId, getCurrentTimestamp } from './utils';
+import { Logger } from '../monitoring/logger';
+import { generateId, getCurrentTimestamp } from '../utils';
 
 export interface StateChange<TState> {
   partial: TState | Partial<TState> | ((state: TState) => TState | Partial<TState>);

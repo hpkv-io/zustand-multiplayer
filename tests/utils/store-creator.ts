@@ -1,14 +1,14 @@
 import {
-  multiplayer,
   MultiplayerOptions,
   MultiplayerState,
   WithMultiplayer,
   ImmerStateCreator,
   WithMultiplayerMiddleware,
-} from '../../src/multiplayer';
-import { LogLevel } from '../../src/logger';
+} from '../../src/types/multiplayer-types';
+import { LogLevel } from '../../src/monitoring/logger';
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import { createUniqueStoreName } from './test-utils';
+import { multiplayer } from '../../src/multiplayer';
 
 const defaultMultiplayerOptions = {
   apiKey: 'test-api-key',

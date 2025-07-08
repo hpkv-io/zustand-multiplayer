@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterAll, beforeEach, afterEach } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../src/multiplayer';
-import { LogLevel } from '../src/logger';
+import { ImmerStateCreator, MultiplayerOptions } from '../src/types/multiplayer-types';
+import { LogLevel } from '../src/monitoring/logger';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
 
 import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';
@@ -20,7 +20,7 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/token-helper', () => {
+vi.doMock('../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };

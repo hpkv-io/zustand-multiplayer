@@ -6,12 +6,15 @@ import {
   ConnectionState as HPKVConnectionState,
   ConnectionConfig,
 } from '@hpkv/websocket-client';
-import { Logger } from './logger';
-import { OperationTracker, createOperationTracker } from './operationTracker';
-import { RetryConfig, RetryManager, createRetryManager } from './retry';
-import { TokenHelper, TokenResponse } from './token-helper';
-import { generateClientId, normalizeError, getCurrentTimestamp, clearTimeoutSafely } from './utils';
-import { StorageKeyManager } from './storageKeyManager';
+import { Logger } from '../monitoring/logger';
+import { OperationTracker, createOperationTracker } from '../core/operation-tracker';
+import { RetryConfig, RetryManager, createRetryManager } from '../network/retry';
+import { TokenHelper, TokenResponse } from '../auth/token-helper';
+import { generateClientId, normalizeError, getCurrentTimestamp, clearTimeoutSafely } from '../utils';
+import { StorageKeyManager } from './storage-key-manager';
+import { SecureTokenCache } from '../auth/token-manager';
+import { ConnectionManager } from './connection-manager';
+import { BrowserConnectivityManager } from '../network/connectivity-manager';
 
 export interface HPKVChangeEvent {
   key: string;
@@ -47,12 +50,6 @@ export interface HPKVStorage {
    * @returns The client ID
    */
   getClientId(): string;
-
-  /**
-   * Checks if the subscription for change notifications is ready
-   * @returns True if the subscription is ready to receive notifications
-   */
-  isSubscriptionReady(): boolean;
 
   /**
    * Adds a listener for changes to items in the storage.
@@ -101,6 +98,13 @@ export interface HPKVStorage {
   setItem(key: string, value: unknown): Promise<void>;
 
   /**
+   * Removes the value for a specific key in the storage.
+   * @param key - The key of the item to remove.
+   * @returns A promise that resolves when the item is removed.
+   */ 
+  removeItem(key: string): Promise<void>;
+
+  /**
    * Clears all items from the storage.
    * @returns A promise that resolves when the storage is cleared.
    */
@@ -115,142 +119,7 @@ export interface HPKVStorage {
 
 
 
-/**
- * Secure token storage that prevents memory dumps
- */
-class SecureTokenCache {
-  private tokenData: { token: string; expiresAt: number } | null = null;
-  private isRefreshing: boolean = false;
 
-  set(token: string, expiresAt: number): void {
-    this.tokenData = { token, expiresAt };
-  }
-
-  get(): { token: string; expiresAt: number } | null {
-    return this.tokenData;
-  }
-
-  clear(): void {
-    if (this.tokenData) {
-      // Overwrite sensitive data before clearing
-      this.tokenData.token = '';
-      this.tokenData = null;
-    }
-  }
-
-  isValid(): boolean {
-    return this.tokenData !== null && getCurrentTimestamp() < this.tokenData.expiresAt;
-  }
-
-  setRefreshing(refreshing: boolean): void {
-    this.isRefreshing = refreshing;
-  }
-
-  getRefreshing(): boolean {
-    return this.isRefreshing;
-  }
-}
-
-/**
- * Connection manager to handle redundant connection checks
- */
-class ConnectionManager {
-  private connectionState: HPKVConnectionState = HPKVConnectionState.DISCONNECTED;
-  private lastConnectionCheck: number = 0;
-  private readonly CONNECTION_CHECK_THROTTLE = 100; // ms
-
-  constructor(private client: HPKVSubscriptionClient | null) {}
-
-  updateClient(client: HPKVSubscriptionClient | null): void {
-    this.client = client;
-  }
-
-  updateConnectionState(state: HPKVConnectionState): void {
-    this.connectionState = state;
-    this.lastConnectionCheck = getCurrentTimestamp();
-  }
-
-  isConnected(): boolean {
-    const now = getCurrentTimestamp();
-    if (now - this.lastConnectionCheck < this.CONNECTION_CHECK_THROTTLE) {
-      return this.connectionState === HPKVConnectionState.CONNECTED;
-    }
-
-    if (this.client) {
-      const stats = this.client.getConnectionStats();
-      if (stats) {
-        this.connectionState = stats.connectionState ?? HPKVConnectionState.DISCONNECTED;
-        this.lastConnectionCheck = now;
-      }
-    }
-
-    return this.connectionState === HPKVConnectionState.CONNECTED;
-  }
-
-  getConnectionState(): HPKVConnectionState {
-    return this.connectionState;
-  }
-}
-
-/**
- * Browser connectivity manager that works in both browser and Node.js environments
- */
-class BrowserConnectivityManager {
-  private isOnline: boolean;
-  private listeners: Set<(isOnline: boolean) => void> = new Set();
-  private isBrowser: boolean;
-
-  constructor() {
-    // Detect if we're in a browser environment
-    this.isBrowser = typeof window !== 'undefined' && typeof navigator !== 'undefined';
-
-    if (this.isBrowser) {
-      this.isOnline = navigator.onLine;
-      window.addEventListener('online', this.handleOnline);
-      window.addEventListener('offline', this.handleOffline);
-    } else {
-      // In Node.js environment, assume we're always online
-      this.isOnline = true;
-    }
-  }
-
-  private handleOnline = (): void => {
-    this.isOnline = true;
-    this.notifyListeners(true);
-  };
-
-  private handleOffline = (): void => {
-    this.isOnline = false;
-    this.notifyListeners(false);
-  };
-
-  private notifyListeners(isOnline: boolean): void {
-    for (const listener of this.listeners) {
-      try {
-        listener(isOnline);
-      } catch (error) {
-        console.error('Error in connectivity listener:', error);
-      }
-    }
-  }
-
-  addListener(listener: (isOnline: boolean) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  getIsOnline(): boolean {
-    return this.isOnline;
-  }
-
-  destroy(): void {
-    if (this.isBrowser) {
-      window.removeEventListener('online', this.handleOnline);
-      window.removeEventListener('offline', this.handleOffline);
-    }
-    this.listeners.clear();
-  }
-}
 
 /**
  * HPKV storage implementation that provides getItem, setItem, and removeItem methods
@@ -263,7 +132,6 @@ class HPKVStorageImpl implements HPKVStorage {
   private connecting: boolean = false;
   private connectionPromise: Promise<void> | null = null;
   private subscriptionId: string | null = null;
-  private subscriptionReady: boolean = false;
   private changeListeners: Set<HPKVChangeListener> = new Set();
   private connectionListeners: Set<HPKVConnectionListener> = new Set();
   private secureTokenCache: SecureTokenCache = new SecureTokenCache();
@@ -370,10 +238,11 @@ class HPKVStorageImpl implements HPKVStorage {
         this.storageOptions.clientConfig,
       );
       this.connectionManager.updateClient(this.client);
-      this.subscribeToConnection();
-      this.subscribeToChanges();
 
+      this.subscribeToChanges();
+      this.subscribeToConnection();
       await this.client.connect();
+
       this.connectionManager.updateConnectionState(HPKVConnectionState.CONNECTED);
     }, 'setupClient');
   }
@@ -402,6 +271,10 @@ class HPKVStorageImpl implements HPKVStorage {
     };
 
     const onError = () => {
+      this.logger.debug('Error in connection', {
+        operation: 'connection-error',
+        clientId: this.clientId,
+      });
       this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
       this.notifyConnectionListeners(HPKVConnectionState.DISCONNECTED);
     };
@@ -430,32 +303,10 @@ class HPKVStorageImpl implements HPKVStorage {
     if (!this.client) return;
 
     if (this.subscriptionId) {
-      this.logger.debug(`Unsubscribing from changes for client ${this.clientId}`, {
-        operation: 'unsubscribe-from-changes',
-        clientId: this.clientId,
-      });
       this.client.unsubscribe(this.subscriptionId);
       this.subscriptionId = null;
-      this.subscriptionReady = false;
     }
-    this.logger.debug(`Subscribing to changes`, {
-      operation: 'subscribe-to-changes',
-      clientId: this.clientId,
-    });
     this.subscriptionId = this.client.subscribe((data: HPKVNotificationResponse) => {
-      // Mark subscription as ready on first notification (indicates subscription is working)
-      if (!this.subscriptionReady) {
-        this.subscriptionReady = true;
-        this.logger.debug(`Subscription is now ready for client ${this.clientId}`, {
-          operation: 'subscription-ready',
-          clientId: this.clientId,
-        });
-      }
-
-      this.logger.debug(`Received change event : ${data.key}: ${JSON.stringify(data.value)}`, {
-        operation: 'change-notification-handling',
-        clientId: this.clientId,
-      });
       if (!data.key || data.value === undefined) {
         return;
       }
@@ -467,10 +318,6 @@ class HPKVStorageImpl implements HPKVStorage {
         const newValue: StoredValue = JSON.parse(valueAsString);
 
         if (newValue && newValue.clientId && newValue.clientId === this.clientId) {
-          this.logger.debug(`Ignoring own change event for key ${keyWithoutPrefix}`, {
-            operation: 'change-notification-handling',
-            clientId: this.clientId,
-          });
           return;
         }
 
@@ -478,10 +325,6 @@ class HPKVStorageImpl implements HPKVStorage {
           key: keyWithoutPrefix,
           value: newValue?.value ?? null,
         };
-        this.logger.debug(`Notifying change listener : ${keyWithoutPrefix}: ${JSON.stringify(changeEvent.value)}`, {
-          operation: 'change-notification-handling',
-          clientId: this.clientId,
-        });
         this.notifyChangeListeners(changeEvent);
       } catch (error) {
         this.logger.error(
@@ -492,23 +335,10 @@ class HPKVStorageImpl implements HPKVStorage {
       }
     });
 
-    // Mark subscription as ready immediately (we'll assume it's working unless proven otherwise)
-    // This is a temporary workaround until we have a better way to detect subscription readiness
-    setTimeout(() => {
-      if (this.subscriptionId && !this.subscriptionReady) {
-        this.subscriptionReady = true;
-        this.logger.debug(`Subscription marked as ready (timeout) for client ${this.clientId}`, {
-          operation: 'subscription-ready-timeout',
-          clientId: this.clientId,
-        });
-      }
-    }, 100);
-
     this.registerCleanup(() => {
       if (this.client && this.subscriptionId) {
         this.client.unsubscribe(this.subscriptionId);
         this.subscriptionId = null;
-        this.subscriptionReady = false;
       }
     });
   }
@@ -802,24 +632,16 @@ class HPKVStorageImpl implements HPKVStorage {
     this.checkDestroyed();
     
     const operation = async (): Promise<void> => {
-      
-      // Check if key is allowed to be published
+
       const logicalKey = this.keyManager.extractLogicalKey(key);
       const isAllowed = this.keyManager.isKeyAllowedToPublish(logicalKey, this.publishedKeys);
       
       if (!isAllowed) {
-        this.logger.debug(`Key ${key} not allowed to be published`, {
-          operation: 'setItem',
-          clientId: this.clientId,
-        });
         return Promise.resolve();
       }
       
       await this.ensureConnection();
-      this.logger.debug(`Setting item - connection ready: ${this.connectionManager.isConnected()}, subscription ready: ${this.subscriptionReady}`, {
-        operation: 'setItem',
-        clientId: this.clientId,
-      });
+      
       
       const fullKey = this.keyManager.ensureNamespacePrefix(key);
       const valueToStore: StoredValue = {
@@ -829,22 +651,12 @@ class HPKVStorageImpl implements HPKVStorage {
       };
       const stringValue = JSON.stringify(valueToStore);
       
-      this.logger.debug(`About to set value for key ${fullKey} : ${stringValue}`, {
-        operation: 'setItem',
-        clientId: this.clientId,
-      });
-      
       await this.client?.set(fullKey, stringValue, true).catch(error => {
         this.logger.error(
           'Failed to set item',
           normalizeError(error),
           { operation: 'setItem', clientId: this.clientId },
         );
-      });
-      
-      this.logger.debug(`Set value for key ${fullKey} : ${stringValue}`, {
-        operation: 'setItem',
-        clientId: this.clientId,
       });
     };
 
@@ -856,7 +668,7 @@ class HPKVStorageImpl implements HPKVStorage {
     const operation = async (): Promise<void> => {
       await this.ensureConnection();
       return this.retryManager.executeWithRetry(async () => {
-        const fullKey = this.keyManager.getFullKey(key);
+        const fullKey = this.keyManager.ensureNamespacePrefix(key);
         await this.client?.delete(fullKey);
       }, `removeItem-${key}`);
     };
@@ -921,9 +733,6 @@ class HPKVStorageImpl implements HPKVStorage {
     return this.clientId;
   }
 
-  public isSubscriptionReady(): boolean {
-    return this.subscriptionReady;
-  }
 
   registerCleanup(callback: () => void): void {
     this.cleanupCallbacks.add(callback);

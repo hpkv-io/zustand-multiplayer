@@ -1,17 +1,62 @@
+import { getCacheManager } from '../utils/cache-manager';
+import { createMemoizedStorageKey } from '../utils/memoization';
+
+/**
+ * Generic storage item interface
+ */
+export interface StorageItem<T = unknown> {
+  key: string;
+  value: T;
+}
+
+/**
+ * Storage key parsing result
+ */
+export interface ParsedStorageKey {
+  path: string[];
+  isGranular: boolean;
+}
+
+/**
+ * Namespace range query pattern
+ */
+export interface NamespaceRange {
+  start: string;
+  end: string;
+}
+
 /**
  * Manages storage keys and key mappings for the multiplayer system.
- * Consolidates all logic for converting between state paths and database keys.
+ * Enhanced with caching for better performance.
  */
-export class StorageKeyManager<TState = any> {
+export class StorageKeyManager {
+  // Cache for storage key operations
+  private cacheManager = getCacheManager();
+  
   constructor(private namespace: string) {}
 
   /**
-   * Create a storage key from a path array
+   * Create a storage key from a path array with caching
    * @param path Array of path segments
    * @returns Full storage key with namespace
    */
   createStorageKey(path: string[]): string {
-    return `${this.namespace}:${path.join(':')}`;
+    const pathKey = path.join(':');
+    const cacheKey = `${this.namespace}:${pathKey}`;
+    
+    // Check cache first
+    const cached = this.cacheManager.storageKeyCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+    
+    // Create the key
+    const result = `${this.namespace}:${pathKey}`;
+    
+    // Cache the result
+    this.cacheManager.storageKeyCache.set(cacheKey, result);
+    
+    return result;
   }
 
   /**
@@ -19,7 +64,7 @@ export class StorageKeyManager<TState = any> {
    * @param storageKey The full storage key
    * @returns Object with path array and granularity information
    */
-  parseStorageKey(storageKey: string): { path: string[]; isGranular: boolean } {
+  parseStorageKey(storageKey: string): ParsedStorageKey {
     const prefix = `${this.namespace}:`;
     let keyToParse = storageKey;
     
@@ -98,7 +143,7 @@ export class StorageKeyManager<TState = any> {
    * @param publishedKeys Array of allowed key patterns
    * @returns Filtered items that match published keys
    */
-  filterItemsByPublishedKeys<T extends { key: string; value: any }>(
+  filterItemsByPublishedKeys<T extends StorageItem>(
     items: T[],
     publishedKeys: string[]
   ): T[] {
@@ -124,10 +169,24 @@ export class StorageKeyManager<TState = any> {
    * Creates a range query pattern for namespace
    * @returns Object with start and end patterns for range queries
    */
-  getNamespaceRange(): { start: string; end: string } {
+  getNamespaceRange(): NamespaceRange {
     return {
       start: `${this.namespace}:`,
       end: `${this.namespace}:\xff`
     };
+  }
+
+  /**
+   * Clear the storage key cache
+   */
+  clearCache(): void {
+    this.cacheManager.storageKeyCache.clear();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats() {
+    return this.cacheManager.storageKeyCache.getStats();
   }
 } 

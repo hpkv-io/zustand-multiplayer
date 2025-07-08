@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi, afterAll } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../src/multiplayer';
+import { describe, it, expect, vi, afterAll } from 'vitest';
+import { ImmerStateCreator, MultiplayerOptions } from '../src/types/multiplayer-types';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
 import { MockTokenHelper } from './mocks/mock-token-manager';
 import { MockWebsocketTokenManager } from './mocks/mock-token-manager';
@@ -18,7 +18,7 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/token-helper', () => {
+vi.doMock('../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
@@ -190,14 +190,16 @@ describe('Multiplayer Middleware Complex State Tests', () => {
 
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
       // Check that granular keys exist for todo 1
+      console.log(`Checking if granular keys exist for todo 1`);
       await expect(client.get(`${uniqueNamespace}:todos:1:id`)).resolves.toHaveProperty('code', 200);
       await expect(client.get(`${uniqueNamespace}:todos:1:text`)).resolves.toHaveProperty('code', 200);
       await expect(client.get(`${uniqueNamespace}:todos:1:completed`)).resolves.toHaveProperty('code', 200);
+      console.log(`Checking if granular keys exist for todo 2`);
       // Check that granular keys exist for todo 2  
       await expect(client.get(`${uniqueNamespace}:todos:2:id`)).resolves.toHaveProperty('code', 200);
       await expect(client.get(`${uniqueNamespace}:todos:2:text`)).resolves.toHaveProperty('code', 200);
       await expect(client.get(`${uniqueNamespace}:todos:2:completed`)).resolves.toHaveProperty('code', 200);
-
+      console.log(`Removing todo 1`);
       store1.getState().removeTodo('1');
       await new Promise(resolve => setTimeout(resolve, 100));
 
