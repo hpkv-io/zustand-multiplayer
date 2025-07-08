@@ -49,7 +49,11 @@ interface ComplexState {
   updateNotifications: (enabled: boolean, frequency: number) => void;
 }
 
-const initializer: ImmerStateCreator<ComplexState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<
+  ComplexState,
+  [['zustand/multiplayer', unknown]],
+  []
+> = set => ({
   items: [],
   todos: {},
   users: {},
@@ -60,31 +64,32 @@ const initializer: ImmerStateCreator<ComplexState, [['zustand/multiplayer', unkn
       frequency: 15,
     },
   },
-  addTodo: (todo) => set(state => {
-    state.todos[todo.id] = todo;
-  }),
-  removeTodo: (id) => set(draft => {
-    delete draft.todos[id];
-  }),
-  updateTodo: (id, updates) => set(state => {
-    if (state.todos[id]) {
-      state.todos[id] = {
-        ...state.todos[id],
-        ...updates,
-      };
-    }
-  }),
+  addTodo: todo =>
+    set(state => {
+      state.todos[todo.id] = todo;
+    }),
+  removeTodo: id =>
+    set(draft => {
+      delete draft.todos[id];
+    }),
+  updateTodo: (id, updates) =>
+    set(state => {
+      if (state.todos[id]) {
+        state.todos[id] = {
+          ...state.todos[id],
+          ...updates,
+        };
+      }
+    }),
   addItem: (name: string) =>
-    set(state => 
-    {
+    set(state => {
       state.items.push({
         id: `${Math.random().toString(36).substring(2, 15)}`,
-        name
+        name,
       });
     }),
   removeItem: (id: string) =>
-    set(state => 
-    {
+    set(state => {
       state.items = state.items.filter(item => item.id !== id);
     }),
   updateTheme: theme =>
@@ -143,7 +148,7 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       store1.getState().addTodo(todo1);
       store2.getState().addTodo(todo2);
 
-      await waitFor(() => {   
+      await waitFor(() => {
         expect(store1.getState().todos['1']).toEqual(todo1);
         expect(store2.getState().todos['2']).toEqual(todo2);
       });
@@ -191,26 +196,62 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
       // Check that granular keys exist for todo 1
       console.log(`Checking if granular keys exist for todo 1`);
-      await expect(client.get(`${uniqueNamespace}:todos:1:id`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:1:text`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:1:completed`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}:todos:1:id`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:1:text`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:1:completed`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
       console.log(`Checking if granular keys exist for todo 2`);
-      // Check that granular keys exist for todo 2  
-      await expect(client.get(`${uniqueNamespace}:todos:2:id`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:2:text`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:2:completed`)).resolves.toHaveProperty('code', 200);
+      // Check that granular keys exist for todo 2
+      await expect(client.get(`${uniqueNamespace}:todos:2:id`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:2:text`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:2:completed`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
       console.log(`Removing todo 1`);
       store1.getState().removeTodo('1');
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // Check that granular keys for todo 1 are deleted
-      await expect(client.get(`${uniqueNamespace}:todos:1:id`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:todos:1:text`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:todos:1:completed`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:todos:1:id`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:1:text`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:1:completed`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
       // Check that granular keys for todo 2 still exist
-      await expect(client.get(`${uniqueNamespace}:todos:2:id`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:2:text`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:2:completed`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}:todos:2:id`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:2:text`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:2:completed`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
     });
 
     it('should handle partial Record updates', async () => {
@@ -233,7 +274,6 @@ describe('Multiplayer Middleware Complex State Tests', () => {
   });
 
   describe('Array Type Support', () => {
-
     it('should synchronize array operations (add/remove items)', async () => {
       const uniqueNamespace = createUniqueStoreName('namespace');
       const store1 = createTestStore({ namespace: uniqueNamespace });
@@ -259,11 +299,9 @@ describe('Multiplayer Middleware Complex State Tests', () => {
         expect(store1.getState().items[0].name).toBe('Task 2');
       });
     });
-
   });
 
   describe('Nested Object Updates', () => {
-
     it('should synchronize nested object updates', async () => {
       const uniqueNamespace = createUniqueStoreName('namespace');
       const store1 = createTestStore({ namespace: uniqueNamespace });
@@ -279,15 +317,14 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       store2.getState().updateNotifications(false, 30);
 
       // Wait for synchronization
-      await waitFor(
-        () => {
-          //expect(store1.getState().settings.theme).toBe('dark');
-          expect(store1.getState().settings.notifications.enabled).toBe(false);
-          expect(store1.getState().settings.notifications.frequency).toBe(30);
-          //expect(store2.getState().settings.theme).toBe('dark');
-          expect(store2.getState().settings.notifications.enabled).toBe(false);
-          expect(store2.getState().settings.notifications.frequency).toBe(30);
-        });
+      await waitFor(() => {
+        //expect(store1.getState().settings.theme).toBe('dark');
+        expect(store1.getState().settings.notifications.enabled).toBe(false);
+        expect(store1.getState().settings.notifications.frequency).toBe(30);
+        //expect(store2.getState().settings.theme).toBe('dark');
+        expect(store2.getState().settings.notifications.enabled).toBe(false);
+        expect(store2.getState().settings.notifications.frequency).toBe(30);
+      });
     });
   });
 });

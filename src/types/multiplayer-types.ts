@@ -1,10 +1,10 @@
 import { ConnectionConfig, ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
-import { StateCreator, StoreApi, StoreMutatorIdentifier } from 'zustand/vanilla';
 import type { Draft } from 'immer';
-import { ConflictInfo, ConflictResolution } from '../sync/conflict-resolver';
+import { StoreMutatorIdentifier } from 'zustand/vanilla';
 import { LogLevel } from '../monitoring/logger';
 import { PerformanceMetrics } from '../monitoring/profiler';
 import { RetryConfig } from '../network/retry';
+import { ConflictInfo, ConflictResolution } from '../sync/conflict-resolver';
 
 // ============================================================================
 // Core Options and State Interfaces
@@ -52,18 +52,20 @@ export type Write<T, U> = Omit<T, keyof U> & U;
 export type SkipTwo<T> = T extends { length: 0 }
   ? []
   : T extends { length: 1 }
-  ? []
-  : T extends { length: 0 | 1 }
-  ? []
-  : T extends [unknown, unknown, ...infer A]
-  ? A
-  : T extends [unknown, unknown?, ...infer A]
-  ? A
-  : T extends [unknown?, unknown?, ...infer A]
-  ? A
-  : never;
+    ? []
+    : T extends { length: 0 | 1 }
+      ? []
+      : T extends [unknown, unknown, ...infer A]
+        ? A
+        : T extends [unknown, unknown?, ...infer A]
+          ? A
+          : T extends [unknown?, unknown?, ...infer A]
+            ? A
+            : never;
 
-export type SetStateType<T> = T extends readonly [any, ...any[]] ? Exclude<T[0], (...args: any[]) => any> : never;
+export type SetStateType<T> = T extends readonly [any, ...any[]]
+  ? Exclude<T[0], (...args: any[]) => any>
+  : never;
 
 // ============================================================================
 // Path and State Operation Types
@@ -80,11 +82,11 @@ export interface PropertyPath<T = unknown> {
 /**
  * Type for values that can be safely serialized and stored
  */
-export type SerializableValue = 
-  | string 
-  | number 
-  | boolean 
-  | null 
+export type SerializableValue =
+  | string
+  | number
+  | boolean
+  | null
   | undefined
   | SerializableValue[]
   | { [key: string]: SerializableValue };
@@ -105,29 +107,31 @@ export interface StateChangeOperation<T> {
 /**
  * Type for state update functions that can be passed to setState
  */
-export type StateUpdater<T> = 
-  | T 
-  | Partial<T> 
-  | ((state: T) => T | Partial<T>) 
+export type StateUpdater<T> =
+  | T
+  | Partial<T>
+  | ((state: T) => T | Partial<T>)
   | StateChangeOperation<T>;
 
 /**
  * Utility type to check if a value is a plain object (not array, not null, not function)
  */
-export type IsPlainObject<T> = T extends Record<string, unknown>
-  ? T extends unknown[]
-    ? false
-    : T extends Function
-    ? false
-    : true
-  : false;
+export type IsPlainObject<T> =
+  T extends Record<string, unknown>
+    ? T extends unknown[]
+      ? false
+      : T extends Function
+        ? false
+        : true
+    : false;
 
 /**
  * Type to extract nested keys from an object type
  */
-export type NestedKeyOf<T> = T extends Record<string, infer U>
-  ? string | (U extends Record<string, unknown> ? `${string}.${NestedKeyOf<U>}` : never)
-  : never;
+export type NestedKeyOf<T> =
+  T extends Record<string, infer U>
+    ? string | (U extends Record<string, unknown> ? `${string}.${NestedKeyOf<U>}` : never)
+    : never;
 
 /**
  * Type for conflict resolution strategies
@@ -146,20 +150,19 @@ export interface TypedConflictResolution<T> {
 // Enhanced State Creator Types
 // ============================================================================
 
-export type ImmerStateCreator<T, Mis extends [StoreMutatorIdentifier, unknown][] = [], Mos extends [StoreMutatorIdentifier, unknown][] = [], U = T> = (
-  setState: (
-    partial: T | Partial<T> | ((state: Draft<T>) => void),
-    replace?: boolean
-  ) => void,
+export type ImmerStateCreator<
+  T,
+  Mis extends [StoreMutatorIdentifier, unknown][] = [],
+  Mos extends [StoreMutatorIdentifier, unknown][] = [],
+  U = T,
+> = (
+  setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void,
   getState: () => T,
   store: {
-    setState: (
-      partial: T | Partial<T> | ((state: Draft<T>) => void),
-      replace?: boolean
-    ) => void;
+    setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void;
     getState: () => T;
     subscribe: (listener: (state: T, prevState: T) => void) => () => void;
-  }
+  },
 ) => U;
 
 export type StoreWithImmerAndMultiplayer<S> = S extends { setState: infer SetState }
@@ -177,9 +180,7 @@ export type StoreWithImmerAndMultiplayer<S> = S extends { setState: infer SetSta
           ...args: SkipTwo<A1>
         ): Sr1;
         setState(
-          nextStateOrUpdater:
-            | SetStateType<A1>
-            | ((state: Draft<SetStateType<A1>>) => void),
+          nextStateOrUpdater: SetStateType<A1> | ((state: Draft<SetStateType<A1>>) => void),
           shouldReplace: true,
           ...args: SkipTwo<A1>
         ): Sr2;
@@ -187,7 +188,10 @@ export type StoreWithImmerAndMultiplayer<S> = S extends { setState: infer SetSta
     : never
   : never;
 
-export type WithMultiplayerMiddleware<S, _A> = Write<S, StoreWithImmerAndMultiplayer<S> & { multiplayer: MultiplayerState<S> }>;
+export type WithMultiplayerMiddleware<S, _A> = Write<
+  S,
+  StoreWithImmerAndMultiplayer<S> & { multiplayer: MultiplayerState<S> }
+>;
 
 export type WithMultiplayer<S> = S & { multiplayer: MultiplayerState<S> };
 
@@ -209,7 +213,7 @@ export enum ErrorSeverity {
   LOW = 'low',
   MEDIUM = 'medium',
   HIGH = 'high',
-  CRITICAL = 'critical'
+  CRITICAL = 'critical',
 }
 
 /**
@@ -223,7 +227,7 @@ export enum ErrorCategory {
   CONFLICT_RESOLUTION = 'conflict_resolution',
   STATE_MANAGEMENT = 'state_management',
   CONFIGURATION = 'configuration',
-  VALIDATION = 'validation'
+  VALIDATION = 'validation',
 }
 
 /**
@@ -251,7 +255,7 @@ export class MultiplayerError extends Error {
     public readonly recoverable: boolean = true,
     public readonly context?: ErrorContext,
     severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-    category: ErrorCategory = ErrorCategory.STATE_MANAGEMENT
+    category: ErrorCategory = ErrorCategory.STATE_MANAGEMENT,
   ) {
     super(message);
     this.name = 'MultiplayerError';
@@ -273,7 +277,7 @@ export class MultiplayerError extends Error {
       category: this.category,
       timestamp: this.timestamp,
       context: this.context,
-      stack: this.stack
+      stack: this.stack,
     };
   }
 }
@@ -284,12 +288,12 @@ export class MultiplayerError extends Error {
 export class AuthenticationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
     super(
-      message, 
-      'AUTHENTICATION_ERROR', 
-      true, 
-      context, 
-      ErrorSeverity.HIGH, 
-      ErrorCategory.AUTHENTICATION
+      message,
+      'AUTHENTICATION_ERROR',
+      true,
+      context,
+      ErrorSeverity.HIGH,
+      ErrorCategory.AUTHENTICATION,
     );
     this.name = 'AuthenticationError';
   }
@@ -301,12 +305,12 @@ export class AuthenticationError extends MultiplayerError {
 export class NetworkError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext, recoverable: boolean = true) {
     super(
-      message, 
-      'NETWORK_ERROR', 
-      recoverable, 
-      context, 
-      ErrorSeverity.MEDIUM, 
-      ErrorCategory.NETWORK
+      message,
+      'NETWORK_ERROR',
+      recoverable,
+      context,
+      ErrorSeverity.MEDIUM,
+      ErrorCategory.NETWORK,
     );
     this.name = 'NetworkError';
   }
@@ -318,12 +322,12 @@ export class NetworkError extends MultiplayerError {
 export class StorageError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext, recoverable: boolean = true) {
     super(
-      message, 
-      'STORAGE_ERROR', 
-      recoverable, 
-      context, 
-      ErrorSeverity.MEDIUM, 
-      ErrorCategory.STORAGE
+      message,
+      'STORAGE_ERROR',
+      recoverable,
+      context,
+      ErrorSeverity.MEDIUM,
+      ErrorCategory.STORAGE,
     );
     this.name = 'StorageError';
   }
@@ -335,12 +339,12 @@ export class StorageError extends MultiplayerError {
 export class ConfigurationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
     super(
-      message, 
-      'CONFIGURATION_ERROR', 
-      false, 
-      context, 
-      ErrorSeverity.HIGH, 
-      ErrorCategory.CONFIGURATION
+      message,
+      'CONFIGURATION_ERROR',
+      false,
+      context,
+      ErrorSeverity.HIGH,
+      ErrorCategory.CONFIGURATION,
     );
     this.name = 'ConfigurationError';
   }
@@ -351,14 +355,7 @@ export class ConfigurationError extends MultiplayerError {
  */
 export class HydrationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
-    super(
-      message, 
-      'HYDRATION_ERROR', 
-      true, 
-      context, 
-      ErrorSeverity.HIGH, 
-      ErrorCategory.HYDRATION
-    );
+    super(message, 'HYDRATION_ERROR', true, context, ErrorSeverity.HIGH, ErrorCategory.HYDRATION);
     this.name = 'HydrationError';
   }
 }
@@ -369,15 +366,13 @@ export class HydrationError extends MultiplayerError {
 export class ValidationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
     super(
-      message, 
-      'VALIDATION_ERROR', 
-      false, 
-      context, 
-      ErrorSeverity.MEDIUM, 
-      ErrorCategory.VALIDATION
+      message,
+      'VALIDATION_ERROR',
+      false,
+      context,
+      ErrorSeverity.MEDIUM,
+      ErrorCategory.VALIDATION,
     );
     this.name = 'ValidationError';
   }
 }
-
- 

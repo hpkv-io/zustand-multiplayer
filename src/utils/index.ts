@@ -8,7 +8,7 @@ export interface HttpRequest {
 }
 
 /**
- * Generic HTTP response interface  
+ * Generic HTTP response interface
  */
 export interface HttpResponse<T = unknown> {
   status(code: number): HttpResponse<T>;
@@ -103,14 +103,7 @@ export function createDelay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Creates a timeout promise that resolves after the specified time
- * @param ms Milliseconds to wait
- * @returns Promise that resolves after timeout
- */
-export function createTimeout(ms: number): Promise<void> {
-  return new Promise<void>(resolve => setTimeout(resolve, ms));
-}
+
 
 /**
  * Safely clears a timeout
@@ -140,23 +133,7 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/**
- * Type guard to check if a value is a string
- * @param value The value to check
- * @returns True if the value is a string
- */
-export function isString(value: unknown): value is string {
-  return typeof value === 'string';
-}
 
-/**
- * Type guard to check if a value is a number
- * @param value The value to check
- * @returns True if the value is a number
- */
-export function isNumber(value: unknown): value is number {
-  return typeof value === 'number' && !isNaN(value);
-}
 
 /**
  * Creates a generic handler function for framework-specific token handlers
@@ -164,7 +141,7 @@ export function isNumber(value: unknown): value is number {
  * @returns Handler function that can be adapted for different frameworks
  */
 export function createGenericHandler<TResponse>(
-  processRequest: (requestData: unknown) => Promise<TResponse>
+  processRequest: (requestData: unknown) => Promise<TResponse>,
 ) {
   return {
     // Express/Connect style handler
@@ -177,7 +154,7 @@ export function createGenericHandler<TResponse>(
         res.status(400).json({ error: message } as ErrorResponse);
       }
     },
-    
+
     // Next.js API handler
     nextjs: () => async (req: NextApiRequest, res: NextApiResponse) => {
       try {
@@ -191,7 +168,7 @@ export function createGenericHandler<TResponse>(
         res.status(400).json({ error: message } as ErrorResponse);
       }
     },
-    
+
     // Fastify handler
     fastify: () => async (request: FastifyRequest, reply: FastifyReply) => {
       try {
@@ -203,4 +180,4 @@ export function createGenericHandler<TResponse>(
       }
     },
   };
-} 
+}

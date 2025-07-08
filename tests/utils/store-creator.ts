@@ -17,10 +17,7 @@ const defaultMultiplayerOptions = {
 };
 
 export class StoreCreator {
-  private storeRegistry: Map<
-    string,
-    UseBoundStore<StoreApi<any>>
-  > = new Map();
+  private storeRegistry: Map<string, UseBoundStore<StoreApi<any>>> = new Map();
 
   createStore<T>(
     config: ImmerStateCreator<T, [['zustand/multiplayer', unknown]], []>,
@@ -29,10 +26,7 @@ export class StoreCreator {
     const namespace = createUniqueStoreName('test-namespace');
     const opts = { namespace, ...defaultMultiplayerOptions, ...options };
     const store = create<WithMultiplayer<T>>()(multiplayer(config, opts));
-    this.storeRegistry.set(
-      opts.namespace,
-      store,
-    );
+    this.storeRegistry.set(opts.namespace, store);
     return store;
   }
 

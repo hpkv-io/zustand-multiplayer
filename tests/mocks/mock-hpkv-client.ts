@@ -281,12 +281,12 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
         // This is a deletion request - remove the key from storage
         const existed = globalHPKVStore.has(key);
         globalHPKVStore.delete(key);
-        
+
         if (existed) {
           // Broadcast deletion to other clients
           broadcastChange(key, null, this.clientId);
         }
-        
+
         return {
           code: 200,
           success: true,

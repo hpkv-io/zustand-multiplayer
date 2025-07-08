@@ -7,7 +7,7 @@ import { escapeRegExp, createGenericHandler } from '../utils';
 export interface TokenRequest {
   /** Store name to generate token for */
   namespace: string;
-  /** Keys to subscribe to */
+  /** Keys and patterns to subscribe to */
   subscribedKeysAndPatterns: string[];
 }
 
@@ -40,22 +40,25 @@ export class TokenHelper {
   /**
    * Generate a token for a store with the given namespace and keys
    */
-  async generateTokenForStore(namespace: string, subscribedKeysAnPatterns: string[]): Promise<string> {
+  async generateTokenForStore(
+    namespace: string,
+    subscribedKeysAnPatterns: string[],
+  ): Promise<string> {
     // Separate exact keys from patterns
     const exactKeys = subscribedKeysAnPatterns.filter(key => !key.includes('*'));
     const patterns = subscribedKeysAnPatterns.filter(key => key.includes('*'));
-    
+
     // Add wildcard patterns for exact keys that don't already have them
     const additionalPatterns = exactKeys
       .filter(key => !patterns.some(p => p.startsWith(key)))
       .map(key => `${key}:*`);
-        
+
     const token = await this.tokenManager.generateToken({
       subscribeKeys: exactKeys,
       subscribePatterns: [...patterns, ...additionalPatterns],
       accessPattern: `^${escapeRegExp(namespace)}:.*$`,
     });
-    
+
     return token;
   }
 
@@ -68,7 +71,6 @@ export class TokenHelper {
    */
   async processTokenRequest(requestData: unknown): Promise<TokenResponse> {
     try {
-      // Parse the request data if it's a string
       let parsedRequest: Partial<TokenRequest>;
 
       if (typeof requestData === 'string') {
@@ -81,17 +83,14 @@ export class TokenHelper {
         parsedRequest = requestData as Partial<TokenRequest>;
       }
 
-      // Validate the request
       const { namespace, subscribedKeysAndPatterns } = parsedRequest;
 
       if (!namespace || typeof namespace !== 'string') {
         throw new Error('Invalid request: namespace is required and must be a string');
       }
 
-      // Generate the token
       const token = await this.generateTokenForStore(namespace, subscribedKeysAndPatterns || []);
 
-      // Return the response
       return { namespace, token };
     } catch (error) {
       throw error instanceof Error ? error : new Error('Unknown error during token generation');

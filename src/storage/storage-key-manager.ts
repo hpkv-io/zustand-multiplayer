@@ -32,7 +32,7 @@ export interface NamespaceRange {
 export class StorageKeyManager {
   // Cache for storage key operations
   private cacheManager = getCacheManager();
-  
+
   constructor(private namespace: string) {}
 
   /**
@@ -43,19 +43,19 @@ export class StorageKeyManager {
   createStorageKey(path: string[]): string {
     const pathKey = path.join(':');
     const cacheKey = `${this.namespace}:${pathKey}`;
-    
+
     // Check cache first
     const cached = this.cacheManager.storageKeyCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
     }
-    
+
     // Create the key
     const result = `${this.namespace}:${pathKey}`;
-    
+
     // Cache the result
     this.cacheManager.storageKeyCache.set(cacheKey, result);
-    
+
     return result;
   }
 
@@ -67,7 +67,7 @@ export class StorageKeyManager {
   parseStorageKey(storageKey: string): ParsedStorageKey {
     const prefix = `${this.namespace}:`;
     let keyToParse = storageKey;
-    
+
     // Remove namespace prefix if present
     if (storageKey.startsWith(prefix)) {
       keyToParse = storageKey.substring(prefix.length);
@@ -75,7 +75,7 @@ export class StorageKeyManager {
 
     const path = keyToParse.split(':');
     const isGranular = path.length > 1;
-    
+
     return { path, isGranular };
   }
 
@@ -143,14 +143,11 @@ export class StorageKeyManager {
    * @param publishedKeys Array of allowed key patterns
    * @returns Filtered items that match published keys
    */
-  filterItemsByPublishedKeys<T extends StorageItem>(
-    items: T[],
-    publishedKeys: string[]
-  ): T[] {
+  filterItemsByPublishedKeys<T extends StorageItem>(items: T[], publishedKeys: string[]): T[] {
     return items.filter(item => {
       const keyParts = item.key.split(':');
       const rootKey = keyParts[0];
-      
+
       // Check if the root key is in publishedKeys (for granular nested fields)
       // or if the entire key is in publishedKeys (for top-level fields)
       return publishedKeys.includes(rootKey) || publishedKeys.includes(item.key);
@@ -172,7 +169,7 @@ export class StorageKeyManager {
   getNamespaceRange(): NamespaceRange {
     return {
       start: `${this.namespace}:`,
-      end: `${this.namespace}:\xff`
+      end: `${this.namespace}:\xff`,
     };
   }
 
@@ -189,4 +186,4 @@ export class StorageKeyManager {
   getCacheStats() {
     return this.cacheManager.storageKeyCache.getStats();
   }
-} 
+}

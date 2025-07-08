@@ -34,14 +34,14 @@ export class BrowserConnectivityManager {
 
   private handleOnline = (): void => {
     if (this.isDestroyed) return;
-    
+
     this.isOnline = true;
     this.notifyListeners(true);
   };
 
   private handleOffline = (): void => {
     if (this.isDestroyed) return;
-    
+
     this.isOnline = false;
     this.notifyListeners(false);
   };
@@ -72,7 +72,7 @@ export class BrowserConnectivityManager {
     }
 
     this.listeners.add(listener);
-    
+
     return () => {
       this.listeners.delete(listener);
     };
@@ -117,8 +117,8 @@ export class BrowserConnectivityManager {
       window.removeEventListener('online', this.handleOnline);
       window.removeEventListener('offline', this.handleOffline);
     }
-    
+
     // Clear all listeners to prevent memory leaks
     this.listeners.clear();
   }
-} 
+}

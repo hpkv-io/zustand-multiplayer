@@ -8,11 +8,11 @@ import { RetryConfig } from '../network/retry';
 /**
  * Type for values that can be safely serialized and stored
  */
-export type SerializableValue = 
-  | string 
-  | number 
-  | boolean 
-  | null 
+export type SerializableValue =
+  | string
+  | number
+  | boolean
+  | null
   | undefined
   | SerializableValue[]
   | { [key: string]: SerializableValue };
@@ -42,4 +42,4 @@ export interface StorageOptions {
   tokenGenerationUrl?: string;
   retryConfig?: RetryConfig;
   clientConfig?: ConnectionConfig;
-} 
+}

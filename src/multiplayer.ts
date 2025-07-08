@@ -1,26 +1,20 @@
+import { ConnectionState } from '@hpkv/websocket-client';
 import { produce } from 'immer';
 import type { Draft } from 'immer';
 import { StateCreator, StoreMutatorIdentifier, StoreApi } from 'zustand/vanilla';
-import { ConnectionState } from '@hpkv/websocket-client';
-import { createHPKVStorage, HPKVStorageOptions } from './storage/hpkv-storage';
+import { MultiplayerOrchestrator } from './core/multiplayer-orchestrator';
 import { createLogger, LogLevel, Logger } from './monitoring/logger';
 import { createDefaultRetryConfig } from './network/retry';
-import { MultiplayerOrchestrator } from './core/multiplayer-orchestrator';
-import { extractPaths, shouldStoreGranularly } from './utils/state-utils';
-import { 
-  type MultiplayerOptions, 
-  type MultiplayerState, 
+import { createHPKVStorage, HPKVStorageOptions } from './storage/hpkv-storage';
+import {
+  type MultiplayerOptions,
+  type MultiplayerState,
   type ImmerStateCreator,
   type PathExtractable,
-  MultiplayerError,
-  ConfigurationError
+  ConfigurationError,
 } from './types/multiplayer-types';
-
-import { 
-  MULTIPLAYER_FIELD, 
-  ARROW_FUNCTION_INDICATOR, 
-  PATH_SEPARATOR 
-} from './utils/constants';
+import { MULTIPLAYER_FIELD, ARROW_FUNCTION_INDICATOR, PATH_SEPARATOR } from './utils/constants';
+import { extractPaths, shouldStoreGranularly } from './utils/state-utils';
 
 // ============================================================================
 // TYPES
@@ -44,9 +38,12 @@ type MultiplayerMiddleware = <TState>(
 type StateUpdateFunction<TState> = (state: TState) => TState | Partial<TState>;
 type StateUpdateImmerFunction<TState> = (state: Draft<TState>) => void;
 type StateUpdatePartial<TState> = TState | Partial<TState>;
-type StateUpdateWithChanges<TState> = { changes: Partial<TState>; deletions: Array<{ path: string[] }> };
+type StateUpdateWithChanges<TState> = {
+  changes: Partial<TState>;
+  deletions: Array<{ path: string[] }>;
+};
 
-type StateUpdateInput<TState> = 
+type StateUpdateInput<TState> =
   | StateUpdatePartial<TState>
   | StateUpdateFunction<TState>
   | StateUpdateImmerFunction<TState>
@@ -66,8 +63,8 @@ function validateAuthenticationOptions<TState>(options: MultiplayerOptions<TStat
       {
         apiKey: options.apiKey,
         tokenGenerationUrl: options.tokenGenerationUrl,
-        operation: 'authentication-validation'
-      }
+        operation: 'authentication-validation',
+      },
     );
   }
 }
@@ -84,13 +81,13 @@ function isArrowFunction(func: Function): boolean {
  */
 function detectStateChanges<TState>(oldState: TState, newState: TState): Partial<TState> {
   const changes: Partial<TState> = {};
-  
+
   for (const key in newState) {
     if (newState[key] !== oldState[key]) {
       changes[key] = newState[key];
     }
   }
-  
+
   return changes;
 }
 
@@ -98,26 +95,26 @@ function detectStateChanges<TState>(oldState: TState, newState: TState): Partial
  * Calculates deletions for granular state storage
  */
 function calculateStateDeletions<TState>(
-  changes: Partial<TState>, 
-  oldState: TState
+  changes: Partial<TState>,
+  oldState: TState,
 ): Array<{ path: string[] }> {
   const deletions: Array<{ path: string[] }> = [];
-  
+
   for (const [field, newValue] of Object.entries(changes)) {
     if (field === MULTIPLAYER_FIELD || typeof newValue === 'function') {
       continue;
     }
-    
+
     if (shouldStoreGranularly(newValue)) {
       const oldFieldValue = (oldState as Record<string, unknown>)[field];
-      
+
       if (shouldStoreGranularly(oldFieldValue)) {
         const deletedPaths = findDeletedPaths(oldFieldValue, newValue, field);
         deletions.push(...deletedPaths);
       }
     }
   }
-  
+
   return deletions;
 }
 
@@ -125,16 +122,16 @@ function calculateStateDeletions<TState>(
  * Finds paths that have been deleted between old and new values
  */
 function findDeletedPaths(
-  oldValue: Record<string, unknown>, 
-  newValue: Record<string, unknown>, 
-  fieldName: string
+  oldValue: Record<string, unknown>,
+  newValue: Record<string, unknown>,
+  fieldName: string,
 ): Array<{ path: string[] }> {
   const oldPaths = extractPaths({ [fieldName]: oldValue } as PathExtractable);
   const newPaths = extractPaths({ [fieldName]: newValue } as PathExtractable);
 
   const oldPathSet = new Set(oldPaths.map(p => p.path.join(PATH_SEPARATOR)));
   const newPathSet = new Set(newPaths.map(p => p.path.join(PATH_SEPARATOR)));
-  
+
   const deletedPaths = Array.from(oldPathSet).filter(path => {
     if (newPathSet.has(path)) {
       return false;
@@ -144,9 +141,9 @@ function findDeletedPaths(
     const pathPrefix = path + PATH_SEPARATOR;
     return !Array.from(newPathSet).some(newPath => newPath.startsWith(pathPrefix));
   });
-  
+
   return deletedPaths.map(deletedPath => ({
-    path: deletedPath.split(PATH_SEPARATOR)
+    path: deletedPath.split(PATH_SEPARATOR),
   }));
 }
 
@@ -157,14 +154,14 @@ function processImmerFunctionUpdate<TState>(
   func: StateUpdateImmerFunction<TState>,
   getCurrentState: () => TState,
   orchestrator: MultiplayerOrchestrator<TState>,
-  replace?: boolean
+  replace?: boolean,
 ): void {
   const oldState = getCurrentState();
   const newState = produce(oldState, func);
-  
+
   const changes = detectStateChanges(oldState, newState);
   const deletions = calculateStateDeletions(changes, oldState);
-  
+
   orchestrator.handleStateChangeRequest({ changes, deletions }, replace);
 }
 
@@ -173,7 +170,7 @@ function processImmerFunctionUpdate<TState>(
  */
 function createDefaultSyncOptions<TState>(
   options: MultiplayerOptions<TState>,
-  nonFunctionKeys: Array<keyof TState>
+  nonFunctionKeys: Array<keyof TState>,
 ): MultiplayerOptions<TState> {
   return {
     subscribeToUpdatesFor: () => nonFunctionKeys,
@@ -194,23 +191,25 @@ function createDefaultSyncOptions<TState>(
  */
 function createPathPatterns(subscribedFields: Array<keyof any>): string[] {
   const pathPatterns = new Set<string>();
-  
+
   subscribedFields.forEach(key => {
     const keyStr = String(key);
     pathPatterns.add(keyStr);
     pathPatterns.add(`${keyStr}:*`);
   });
-  
+
   return Array.from(pathPatterns);
 }
 
 /**
  * Extracts non-function keys from initial state
  */
-function extractNonFunctionKeys<TState>(initialState: Record<string, unknown>): Array<keyof TState> {
-  return Object.keys(initialState).filter(
-    key => typeof initialState[key] !== 'function',
-  ) as Array<keyof TState>;
+function extractNonFunctionKeys<TState>(
+  initialState: Record<string, unknown>,
+): Array<keyof TState> {
+  return Object.keys(initialState).filter(key => typeof initialState[key] !== 'function') as Array<
+    keyof TState
+  >;
 }
 
 /**
@@ -220,13 +219,13 @@ function setupWindowCleanup(orchestrator: MultiplayerOrchestrator<any>): () => v
   if (typeof window !== 'undefined') {
     const cleanup = () => orchestrator.destroy();
     window.addEventListener('beforeunload', cleanup);
-    
+
     // Return a function to remove the event listener
     return () => {
       window.removeEventListener('beforeunload', cleanup);
     };
   }
-  
+
   // Return a no-op function for non-browser environments
   return () => {};
 }
@@ -236,18 +235,16 @@ function setupWindowCleanup(orchestrator: MultiplayerOrchestrator<any>): () => v
  */
 async function initializeOrchestrator<TState>(
   orchestrator: MultiplayerOrchestrator<TState>,
-  logger: Logger
+  logger: Logger,
 ): Promise<void> {
   try {
     await orchestrator.connect();
     await orchestrator.hydrate();
   } catch (error) {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
-    logger.error(
-      'Store initialization failed',
-      normalizedError,
-      { operation: 'store-initialization' }
-    );
+    logger.error('Store initialization failed', normalizedError, {
+      operation: 'store-initialization',
+    });
     // Error is logged but doesn't prevent store creation
   }
 }
@@ -274,24 +271,21 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
   ) => {
     if (typeof partial === 'function') {
       const func = partial as Function;
-      
+
       if (isArrowFunction(func)) {
         processImmerFunctionUpdate(
           partial as StateUpdateImmerFunction<TState>,
           () => get() as TState,
           orchestrator,
-          replace
+          replace,
         );
       } else {
-        orchestrator.handleStateChangeRequest(
-          partial as StateUpdateFunction<TState>, 
-          replace
-        );
+        orchestrator.handleStateChangeRequest(partial as StateUpdateFunction<TState>, replace);
       }
     } else {
       orchestrator.handleStateChangeRequest(
-        partial as StateUpdatePartial<TState> | StateUpdateWithChanges<TState>, 
-        replace
+        partial as StateUpdatePartial<TState> | StateUpdateWithChanges<TState>,
+        replace,
       );
     }
   };
@@ -344,10 +338,10 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
   };
 
   orchestrator = new MultiplayerOrchestrator(
-    client, 
-    syncOptions, 
-    orchestratorApi as StoreApi<TState>, 
-    store
+    client,
+    syncOptions,
+    orchestratorApi as StoreApi<TState>,
+    store,
   );
 
   // Create multiplayer state interface
@@ -368,7 +362,8 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
     ...store,
     multiplayer: {
       ...multiplayerState,
-      connectionState: client?.getConnectionStatus()?.connectionState ?? ConnectionState.DISCONNECTED,
+      connectionState:
+        client?.getConnectionStatus()?.connectionState ?? ConnectionState.DISCONNECTED,
       hasHydrated: false,
     },
   } as TStateWithMultiplayer;
@@ -376,7 +371,7 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
   // Setup async initialization and cleanup
   initializeOrchestrator(orchestrator, logger);
   const windowCleanup = setupWindowCleanup(orchestrator);
-  
+
   // Store the cleanup function for proper resource management
   // Note: In a real implementation, this should be stored somewhere accessible
   // for manual cleanup if needed before page unload

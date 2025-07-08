@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { 
-  LRUCache, 
-  WeakCache, 
+import {
+  LRUCache,
+  WeakCache,
   CacheManager,
   PathExtractionCache,
-  DeepEqualityCache
+  DeepEqualityCache,
 } from '../../../src/utils/cache-manager';
 
 describe('LRUCache', () => {
@@ -33,7 +33,7 @@ describe('LRUCache', () => {
     it('should delete keys', () => {
       cache.set('key1', 100);
       expect(cache.has('key1')).toBe(true);
-      
+
       cache.delete('key1');
       expect(cache.has('key1')).toBe(false);
       expect(cache.get('key1')).toBeUndefined();
@@ -43,7 +43,7 @@ describe('LRUCache', () => {
       cache.set('key1', 100);
       cache.set('key2', 200);
       expect(cache.size).toBe(2);
-      
+
       cache.clear();
       expect(cache.size).toBe(0);
       expect(cache.has('key1')).toBe(false);
@@ -57,7 +57,7 @@ describe('LRUCache', () => {
       cache.set('key2', 200);
       cache.set('key3', 300);
       expect(cache.size).toBe(3);
-      
+
       // Adding a 4th item should evict the first
       cache.set('key4', 400);
       expect(cache.size).toBe(3);
@@ -71,10 +71,10 @@ describe('LRUCache', () => {
       cache.set('key1', 100);
       cache.set('key2', 200);
       cache.set('key3', 300);
-      
+
       // Access key1 to make it recently used
       cache.get('key1');
-      
+
       // Adding a 4th item should now evict key2 (least recently used)
       cache.set('key4', 400);
       expect(cache.has('key1')).toBe(true);
@@ -87,13 +87,13 @@ describe('LRUCache', () => {
   describe('Statistics', () => {
     it('should track cache size', () => {
       expect(cache.size).toBe(0);
-      
+
       cache.set('key1', 100);
       expect(cache.size).toBe(1);
-      
+
       cache.set('key2', 200);
       expect(cache.size).toBe(2);
-      
+
       cache.delete('key1');
       expect(cache.size).toBe(1);
     });
@@ -102,7 +102,7 @@ describe('LRUCache', () => {
       cache.set('key1', 100);
       cache.get('key1'); // hit
       cache.get('key2'); // miss
-      
+
       const stats = cache.getStats();
       expect(stats.hits).toBe(1);
       expect(stats.misses).toBe(1);
@@ -142,7 +142,7 @@ describe('WeakCache', () => {
     it('should delete keys', () => {
       cache.set(obj1, 'value1');
       expect(cache.has(obj1)).toBe(true);
-      
+
       cache.delete(obj1);
       expect(cache.has(obj1)).toBe(false);
       expect(cache.get(obj1)).toBeUndefined();
@@ -160,10 +160,10 @@ describe('PathExtractionCache', () => {
   it('should cache path extraction results', () => {
     const state = { user: { name: 'John' } };
     const paths = [{ path: ['user', 'name'], value: 'John' }];
-    
+
     // Set cache entry
     cache.set(state, [], paths);
-    
+
     // Get cache entry
     const result = cache.get(state, []);
     expect(result).toEqual(paths);
@@ -173,10 +173,10 @@ describe('PathExtractionCache', () => {
     const state = { user: { name: 'John' } };
     const paths1 = [{ path: ['user', 'name'], value: 'John' }];
     const paths2 = [{ path: ['profile', 'name'], value: 'John' }];
-    
+
     cache.set(state, [], paths1);
     cache.set(state, ['profile'], paths2);
-    
+
     expect(cache.get(state, [])).toEqual(paths1);
     expect(cache.get(state, ['profile'])).toEqual(paths2);
   });
@@ -184,7 +184,7 @@ describe('PathExtractionCache', () => {
   it('should clear cache', () => {
     const state = { user: { name: 'John' } };
     cache.set(state, [], []);
-    
+
     cache.clear();
     expect(cache.get(state, [])).toBeUndefined();
   });
@@ -200,13 +200,13 @@ describe('DeepEqualityCache', () => {
   it('should cache equality comparisons', () => {
     const obj1 = { name: 'John' };
     const obj2 = { name: 'John' };
-    
+
     // First call should miss cache
     expect(cache.get(obj1, obj2)).toBeUndefined();
-    
+
     // Set result
     cache.set(obj1, obj2, true);
-    
+
     // Second call should hit cache
     expect(cache.get(obj1, obj2)).toBe(true);
   });
@@ -214,7 +214,7 @@ describe('DeepEqualityCache', () => {
   it('should handle false equality results', () => {
     const obj1 = { name: 'John' };
     const obj2 = { name: 'Jane' };
-    
+
     cache.set(obj1, obj2, false);
     expect(cache.get(obj1, obj2)).toBe(false);
   });
@@ -247,7 +247,7 @@ describe('CacheManager', () => {
     it('should allow storage key caching', () => {
       const path = 'user:name';
       const fullKey = 'namespace:user:name';
-      
+
       cacheManager.storageKeyCache.set(path, fullKey);
       expect(cacheManager.storageKeyCache.get(path)).toBe(fullKey);
     });
@@ -255,7 +255,7 @@ describe('CacheManager', () => {
     it('should allow state reconstruction caching', () => {
       const stateKey = 'state-key';
       const reconstructedState = { user: { name: 'John' } };
-      
+
       cacheManager.stateReconstructionCache.set(stateKey, reconstructedState);
       expect(cacheManager.stateReconstructionCache.get(stateKey)).toBe(reconstructedState);
     });
@@ -266,14 +266,14 @@ describe('CacheManager', () => {
       // Populate caches
       cacheManager.storageKeyCache.set('key1', 'value1');
       cacheManager.stateReconstructionCache.set('key2', {});
-      
+
       const state = { test: true };
       cacheManager.pathExtractionCache.set(state, [], []);
       cacheManager.deepEqualityCache.set({ a: 1 }, { a: 1 }, true);
-      
+
       // Clear all
       cacheManager.clearAll();
-      
+
       // Verify all caches are empty
       expect(cacheManager.storageKeyCache.size).toBe(0);
       expect(cacheManager.stateReconstructionCache.size).toBe(0);
@@ -285,9 +285,9 @@ describe('CacheManager', () => {
       // Add some cache entries
       cacheManager.storageKeyCache.set('path1', 'key1');
       cacheManager.storageKeyCache.set('path2', 'key2');
-      
+
       const stats = cacheManager.getAllStats();
-      
+
       expect(stats.storageKey.size).toBe(2);
       expect(stats.pathExtraction).toBeDefined();
       expect(stats.deepEquality).toBeDefined();
@@ -298,15 +298,15 @@ describe('CacheManager', () => {
   describe('Performance', () => {
     it('should handle many cache operations efficiently', () => {
       const startTime = performance.now();
-      
+
       // Perform many operations
       for (let i = 0; i < 1000; i++) {
         cacheManager.storageKeyCache.set(`key${i}`, `value${i}`);
         cacheManager.storageKeyCache.get(`key${i}`);
       }
-      
+
       const endTime = performance.now();
       expect(endTime - startTime).toBeLessThan(100); // Should complete within 100ms
     });
   });
-}); 
+});

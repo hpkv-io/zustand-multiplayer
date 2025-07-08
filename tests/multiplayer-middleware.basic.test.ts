@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions, WithMultiplayer } from '../src/types/multiplayer-types';
+import {
+  ImmerStateCreator,
+  MultiplayerOptions,
+  WithMultiplayer,
+} from '../src/types/multiplayer-types';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { createUniqueStoreName, waitFor } from './utils/test-utils';
@@ -51,8 +55,14 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
   nested: { value: 0 },
   increment: () => set(state => ({ count: state.count + 1 })),
   decrement: () => set(state => ({ count: state.count - 1 })),
-  setText: (text: string) => set(state => { state.text = text }),
-  updateNested: (value: number) => set(state => { state.nested.value = value }),
+  setText: (text: string) =>
+    set(state => {
+      state.text = text;
+    }),
+  updateNested: (value: number) =>
+    set(state => {
+      state.nested.value = value;
+    }),
 });
 
 const storeCreator = new StoreCreator();
@@ -73,7 +83,6 @@ describe('Multiplayer Middleware Basic Tests', () => {
   });
 
   describe('Store Creation & Initialization', () => {
-    
     it('should create a zustand store with initial state', () => {
       const store = createTestStore();
       expect(store.getState().count).toBe(0);
@@ -84,7 +93,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should have multiplayer state with all required properties', () => {
       const store = createTestStore();
       const multiplayer = store.getState().multiplayer;
-      
+
       expect(multiplayer).toBeDefined();
       expect(typeof multiplayer.connectionState).toBe('string');
       expect(typeof multiplayer.hasHydrated).toBe('boolean');
@@ -115,7 +124,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
         tokenGenerationUrl: 'https://api.example.com/generate-token',
       });
       await waitFor(() => {
-        expect(store.getState().multiplayer.connectionState === ConnectionState.CONNECTED).toBe(true);
+        expect(store.getState().multiplayer.connectionState === ConnectionState.CONNECTED).toBe(
+          true,
+        );
       });
     });
 
@@ -126,7 +137,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
         apiKey: 'test-api-key',
       });
       await waitFor(() => {
-        expect(store.getState().multiplayer.connectionState === ConnectionState.CONNECTED).toBe(true);
+        expect(store.getState().multiplayer.connectionState === ConnectionState.CONNECTED).toBe(
+          true,
+        );
       });
     });
 
@@ -157,7 +170,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
   describe('Connection Management', () => {
     it('should connect automatically after creation', async () => {
       const store = createTestStore();
-      await waitFor(() => store.getState().multiplayer.connectionState === ConnectionState.CONNECTED);
+      await waitFor(
+        () => store.getState().multiplayer.connectionState === ConnectionState.CONNECTED,
+      );
       expect(store.getState().multiplayer.connectionState).toBe('CONNECTED');
     });
 
@@ -192,7 +207,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
         client.simulateDisconnect();
         await new Promise(resolve => setTimeout(resolve, 200));
 
-        expect(stateChanges.some(state => state === 'DISCONNECTED' || state === 'RECONNECTING')).toBe(true);
+        expect(
+          stateChanges.some(state => state === 'DISCONNECTED' || state === 'RECONNECTING'),
+        ).toBe(true);
         expect(store.getState().multiplayer.connectionState).toBe('CONNECTED');
       } finally {
         unsubscribe();
@@ -202,12 +219,12 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should reconnect when store is updated in disconnected state', async () => {
       const uniqueNamespace = createUniqueStoreName('reconnect-on-update-test');
       const store = createTestStore({ namespace: uniqueNamespace });
-      
+
       await store.getState().multiplayer.disconnect();
       expect(store.getState().multiplayer.connectionState).toBe('DISCONNECTED');
-      
+
       store.getState().increment();
-      
+
       await waitFor(() => {
         expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
       });
@@ -215,20 +232,19 @@ describe('Multiplayer Middleware Basic Tests', () => {
 
     it('should handle multiple connect/disconnect cycles', async () => {
       const store = createTestStore();
-      
+
       for (let i = 0; i < 3; i++) {
         await waitFor(() => expect(store.getState().multiplayer.connectionState).toBe('CONNECTED'));
         await store.getState().multiplayer.disconnect();
         expect(store.getState().multiplayer.connectionState).toBe('DISCONNECTED');
         await store.getState().multiplayer.connect();
       }
-      
+
       expect(store.getState().multiplayer.connectionState).toBe('CONNECTED');
     });
   });
 
   describe('State Persistence & Hydration', () => {
-
     it('should persist state changes', async () => {
       const uniqueNamespace = createUniqueStoreName('persistence-test');
       const store = createTestStore({ namespace: uniqueNamespace });
@@ -238,9 +254,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.getState().updateNested(10);
       await new Promise(resolve => setTimeout(resolve, 100));
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      const countKey = await client.get(`${uniqueNamespace}:count`) as HPKVGetResponse;
-      const textKey = await client.get(`${uniqueNamespace}:text`) as HPKVGetResponse;
-      const nestedKey = await client.get(`${uniqueNamespace}:nested:value`) as HPKVGetResponse;
+      const countKey = (await client.get(`${uniqueNamespace}:count`)) as HPKVGetResponse;
+      const textKey = (await client.get(`${uniqueNamespace}:text`)) as HPKVGetResponse;
+      const nestedKey = (await client.get(`${uniqueNamespace}:nested:value`)) as HPKVGetResponse;
       expect(JSON.parse(countKey.value as string).value).toBe(1);
       expect(JSON.parse(textKey.value as string).value).toBe('Persisted Text');
       expect(JSON.parse(nestedKey.value as string).value).toBe(10);
@@ -267,7 +283,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.getState().updateNested(10);
       await new Promise(resolve => setTimeout(resolve, 100));
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      await expect(client.get(`${uniqueNamespace}:updateNested`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:updateNested`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
       await expect(client.get(`${uniqueNamespace}:increment`)).resolves.toHaveProperty('code', 404);
       await expect(client.get(`${uniqueNamespace}:decrement`)).resolves.toHaveProperty('code', 404);
       await expect(client.get(`${uniqueNamespace}:setText`)).resolves.toHaveProperty('code', 404);
@@ -305,7 +324,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
 
       store1.getState().increment();
       store2.getState().setText('Synced Text');
-      
+
       await waitFor(() => {
         expect(store1.getState().text).toBe('Synced Text');
         expect(store2.getState().count).toBe(1);
@@ -316,9 +335,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
       const uniqueNamespace = createUniqueStoreName('sync-nested-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
-      
+
       store1.getState().updateNested(100);
-      
+
       await waitFor(() => expect(store2.getState().nested.value).toBe(100));
     });
 
@@ -341,14 +360,14 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should not sync function properties', async () => {
       const uniqueNamespace = createUniqueStoreName('no-function-sync-test');
       const store = createTestStore({ namespace: uniqueNamespace });
-      
+
       await waitFor(() => store.getState().multiplayer.hasHydrated);
       store.getState().increment();
       store.getState().setText('Synced Text');
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      
+
       // Functions should not be stored
       await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 200);
       await expect(client.get(`${uniqueNamespace}:increment`)).resolves.toHaveProperty('code', 404);
@@ -361,7 +380,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should create keys with correct namespace formatting', async () => {
       const uniqueNamespace = createUniqueStoreName('storage-keys-test');
       const store = createTestStore({ namespace: uniqueNamespace });
-      
+
       await waitFor(() => store.getState().multiplayer.hasHydrated);
 
       store.getState().increment();
@@ -372,7 +391,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
       await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 200);
       await expect(client.get(`${uniqueNamespace}:text`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
     });
 
     it('should clear all data when calling clearStorage', async () => {
@@ -395,7 +417,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should remove keys from storage when cleared', async () => {
       const uniqueNamespace = createUniqueStoreName('clear-keys-test');
       const store = createTestStore({ namespace: uniqueNamespace });
-      
+
       await waitFor(() => store.getState().multiplayer.hasHydrated);
 
       store.getState().increment();
@@ -405,10 +427,13 @@ describe('Multiplayer Middleware Basic Tests', () => {
 
       const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
       await store.getState().multiplayer.clearStorage();
-      
+
       await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
       await expect(client.get(`${uniqueNamespace}:text`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
     });
   });
 
@@ -422,9 +447,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store1.getState().increment();
       store1.getState().setText('Store 1');
       store2.getState().setText('Store 2');
-      
+
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       await waitFor(() => {
         expect(store1.getState().count).toBe(1);
         expect(store1.getState().text).toBe('Store 1');
@@ -468,10 +493,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
 
       const subscriber = vi.fn();
       store.subscribe(state => state.count, subscriber);
-      
+
       store.getState().increment(); // This should trigger subscriber
       store.getState().setText('No Trigger'); // This should NOT trigger subscriber
-      
+
       await new Promise(resolve => setTimeout(resolve, 100));
       await waitFor(() => {
         expect(subscriber).toHaveBeenCalledTimes(1);
@@ -492,7 +517,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
       });
 
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       expect(store.getState().count).toBe(5);
       expect(store.getState().text).toBe('Immer Update');
     });
@@ -514,8 +539,6 @@ describe('Multiplayer Middleware Basic Tests', () => {
     });
   });
 
-
-
   describe('Metrics & Monitoring', () => {
     it('should update metrics when operations are performed', async () => {
       const uniqueNamespace = createUniqueStoreName('metrics-update-test');
@@ -534,7 +557,9 @@ describe('Multiplayer Middleware Basic Tests', () => {
       });
 
       const finalMetrics = store.getState().multiplayer.getMetrics();
-      expect(finalMetrics.stateChangesProcessed).toBeGreaterThan(initialMetrics.stateChangesProcessed);
+      expect(finalMetrics.stateChangesProcessed).toBeGreaterThan(
+        initialMetrics.stateChangesProcessed,
+      );
     });
 
     it('should track hydration time in metrics', async () => {
@@ -549,7 +574,11 @@ describe('Multiplayer Middleware Basic Tests', () => {
 
   describe('Error Handling & Edge Cases', () => {
     it('should handle empty initial state', () => {
-      const emptyInitializer: ImmerStateCreator<{}, [['zustand/multiplayer', unknown]], []> = () => ({});
+      const emptyInitializer: ImmerStateCreator<
+        {},
+        [['zustand/multiplayer', unknown]],
+        []
+      > = () => ({});
       const store = storeCreator.createStore<{}>(emptyInitializer, {
         namespace: createUniqueStoreName('empty-state-test'),
         apiKey: 'test-api-key',

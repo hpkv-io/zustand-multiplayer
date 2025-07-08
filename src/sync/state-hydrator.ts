@@ -1,11 +1,11 @@
-import { HPKVStorage } from '../storage/hpkv-storage';
 import { Logger } from '../monitoring/logger';
 import { PerformanceMonitor } from '../monitoring/profiler';
+import { HPKVStorage } from '../storage/hpkv-storage';
 import { StorageKeyManager } from '../storage/storage-key-manager';
 import { HydrationError } from '../types/multiplayer-types';
 import { normalizeError, getCurrentTimestamp, isPlainObject } from '../utils';
-import { PathManager, fromLegacyPath } from '../utils/path-manager';
 import { createMemoizedStateReconstruction } from '../utils/memoization';
+import { PathManager, fromLegacyPath } from '../utils/path-manager';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -39,7 +39,7 @@ export class StateHydrator<TState> {
   private isHydrating = false;
   private hydrationPromise: Promise<void> | null = null;
   private hasHydrated = false;
-  
+
   // Memoized state reconstruction for better performance
   private memoizedStateReconstruction: (items: Map<string, unknown>) => Partial<TState>;
 
@@ -47,11 +47,11 @@ export class StateHydrator<TState> {
     private client: HPKVStorage,
     private logger: Logger,
     private performanceMonitor: PerformanceMonitor,
-    private keyManager: StorageKeyManager<TState>,
+    private keyManager: StorageKeyManager,
   ) {
     // Create memoized version of state reconstruction
     this.memoizedStateReconstruction = createMemoizedStateReconstruction(
-             this.reconstructStateFromItems.bind(this)
+      this.reconstructStateFromItems.bind(this),
     );
   }
 
@@ -71,7 +71,10 @@ export class StateHydrator<TState> {
       return;
     }
 
-    this.logger.info('Starting hydration', { operation: 'hydration', clientId: this.client.getClientId() });
+    this.logger.info('Starting hydration', {
+      operation: 'hydration',
+      clientId: this.client.getClientId(),
+    });
     this.isHydrating = true;
 
     const startTime = getCurrentTimestamp();
@@ -96,7 +99,7 @@ export class StateHydrator<TState> {
   ): Promise<void> {
     try {
       const allItems = await this.client.getAllItems();
-      
+
       // Reconstruct the state from granular storage using memoized version
       const reconstructedState = this.memoizedStateReconstruction(allItems);
 
@@ -111,11 +114,7 @@ export class StateHydrator<TState> {
 
       this.logger.info(`Hydrated state from database`, { operation: 'hydration' });
     } catch (error) {
-      this.logger.error(
-        'Hydration failed',
-        normalizeError(error),
-        { operation: 'hydration' },
-      );
+      this.logger.error('Hydration failed', normalizeError(error), { operation: 'hydration' });
 
       throw new HydrationError('Failed to hydrate state', {
         error: normalizeError(error).message,
@@ -125,10 +124,10 @@ export class StateHydrator<TState> {
 
   private reconstructStateFromItems(allItems: Map<string, unknown>): Partial<TState> {
     const reconstructedState: StateReconstruction = {};
-    
+
     for (const [key, value] of allItems.entries()) {
       const parsed = this.keyManager.parseStorageKey(key);
-      
+
       if (parsed.path.length === 1) {
         // Top-level field
         reconstructedState[parsed.path[0]] = value;
@@ -142,18 +141,16 @@ export class StateHydrator<TState> {
   }
 
   private invokeOnHydrateCallback(
-    reconstructedState: Partial<TState>, 
-    onHydrate?: (state: TState) => void
+    reconstructedState: Partial<TState>,
+    onHydrate?: (state: TState) => void,
   ): void {
     if (onHydrate) {
       try {
         onHydrate(reconstructedState as TState);
       } catch (error) {
-        this.logger.error(
-          'Error in onHydrate callback',
-          normalizeError(error),
-          { operation: 'hydration' },
-        );
+        this.logger.error('Error in onHydrate callback', normalizeError(error), {
+          operation: 'hydration',
+        });
       }
     }
   }
@@ -174,4 +171,4 @@ export class StateHydrator<TState> {
     this.isHydrating = false;
     this.hydrationPromise = null;
   }
-} 
+}

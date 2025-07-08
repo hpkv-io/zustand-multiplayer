@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
 import { ImmerStateCreator, MultiplayerOptions } from '../src/types/multiplayer-types';
 import { LogLevel } from '../src/monitoring/logger';
 import { createUniqueStoreName, waitFor, createNetworkDelay } from './utils/test-utils';
-import { StateCreator } from 'zustand';
 import { ConnectionState } from '@hpkv/websocket-client';
 import { MockTokenHelper } from './mocks/mock-token-manager';
 import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';

@@ -13,15 +13,6 @@ export interface StateChangeOperation<T> {
 }
 
 /**
- * Type for state update functions that can be passed to setState
- */
-export type StateUpdater<T> = 
-  | T 
-  | Partial<T> 
-  | ((state: T) => T | Partial<T>) 
-  | StateChangeOperation<T>;
-
-/**
  * Type for conflict resolution strategies
  */
 export type ConflictStrategy = 'keep-local' | 'keep-remote' | 'merge' | 'manual';
@@ -32,4 +23,4 @@ export type ConflictStrategy = 'keep-local' | 'keep-remote' | 'merge' | 'manual'
 export interface TypedConflictResolution<T> {
   strategy: ConflictStrategy;
   manualResolution?: Partial<T>;
-} 
+}

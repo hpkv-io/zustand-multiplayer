@@ -17,7 +17,6 @@ export class SecureTokenCache {
 
   clear(): void {
     if (this.tokenData) {
-      // Overwrite sensitive data before clearing
       this.tokenData.token = '';
       this.tokenData = null;
     }
@@ -34,4 +33,4 @@ export class SecureTokenCache {
   getRefreshing(): boolean {
     return this.isRefreshing;
   }
-} 
+}

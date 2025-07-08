@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { MultiplayerOptions, WithMultiplayer, ImmerStateCreator, WithMultiplayerMiddleware } from '../src/types/multiplayer-types';
-import { LogLevel } from '../src/logger';
+import {
+  MultiplayerOptions,
+  WithMultiplayer,
+  ImmerStateCreator,
+  WithMultiplayerMiddleware,
+} from '../src/types/multiplayer-types';
+import { LogLevel } from '../src/monitoring/logger';
 import { createUniqueStoreName, waitFor, createTestServer } from './utils/test-utils';
 import { StoreCreator } from './utils/store-creator';
 import { StoreApi, UseBoundStore } from 'zustand';
@@ -23,19 +28,33 @@ type TestState = {
 };
 
 // Create type for our test store with multiplayer
-type TestZustandStore = UseBoundStore<WithMultiplayerMiddleware<StoreApi<WithMultiplayer<TestState>>, WithMultiplayer<TestState>>>;
+type TestZustandStore = UseBoundStore<
+  WithMultiplayerMiddleware<StoreApi<WithMultiplayer<TestState>>, WithMultiplayer<TestState>>
+>;
 
 const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   nested: { value: 0 },
   items: {},
-  increment: () => set(state => { state.count++; }),
-  decrement: () => set(state => { state.count--; }),
+  increment: () =>
+    set(state => {
+      state.count++;
+    }),
+  decrement: () =>
+    set(state => {
+      state.count--;
+    }),
   setText: (text: string) => set({ text }),
   updateNested: (value: number) => set({ nested: { value } }),
-  addItem: (item: string) => set(state => { state.items[item] = item; }),
-  removeItem: (item: string) => set(state => { delete state.items[item]; }),
+  addItem: (item: string) =>
+    set(state => {
+      state.items[item] = item;
+    }),
+  removeItem: (item: string) =>
+    set(state => {
+      delete state.items[item];
+    }),
 });
 
 describe('Multiplayer Middleware Integration Tests', () => {
@@ -75,25 +94,20 @@ describe('Multiplayer Middleware Integration Tests', () => {
   it.skipIf(skip)('should synchronize state changes between clients', async () => {
     const uniqueNamespace = createUniqueStoreName('sync-integration-test');
     const store1 = createTestStore({ namespace: uniqueNamespace });
+    const store2 = createTestStore({
+      namespace: uniqueNamespace,
+      subscribeToUpdatesFor: () => ['count'],
+    });
     await waitFor(() => {
       expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-    });
-
-    const store2 = createTestStore({ namespace: uniqueNamespace, subscribeToUpdatesFor: () => ['count'] });
-    await waitFor(() => {
       expect(store2.getState().multiplayer.hasHydrated).toBe(true);
     });
 
     store1.getState().increment();
-
-    await waitFor(() => {
-      expect(store2.getState().count).toBe(1);
-    });
-
-
     store2.getState().setText('Integration Test');
 
     await waitFor(() => {
+      expect(store2.getState().count).toBe(1);
       expect(store1.getState().text).toBe('Integration Test');
     });
   });
@@ -106,7 +120,6 @@ describe('Multiplayer Middleware Integration Tests', () => {
       expect(store1.getState().multiplayer.hasHydrated).toBe(true);
     });
 
-    // Update state
     store1.getState().increment();
     store1.getState().setText('Persistence Test');
     store1.getState().updateNested(99);
@@ -134,15 +147,15 @@ describe('Multiplayer Middleware Integration Tests', () => {
     async () => {
       const uniqueNamespace = createUniqueStoreName('conflict-resolution-default-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
+      const store2 = createTestStore({
+        namespace: uniqueNamespace,
+        subscribeToUpdatesFor: () => ['count'],
+      });
       await waitFor(() => {
         expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-        });
-
-      const store2 = createTestStore({ namespace: uniqueNamespace, subscribeToUpdatesFor: () => ['count'] });
-
-      await waitFor(() => {
         expect(store2.getState().multiplayer.hasHydrated).toBe(true);
       });
+
 
       await store2.getState().multiplayer.disconnect();
 
@@ -174,9 +187,6 @@ describe('Multiplayer Middleware Integration Tests', () => {
     async () => {
       const uniqueNamespace = createUniqueStoreName('conflict-resolution-test-merge');
       const store1 = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => {
-        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-      });
       const store2 = createTestStore({
         namespace: uniqueNamespace,
         onConflict: conflicts => {
@@ -189,6 +199,7 @@ describe('Multiplayer Middleware Integration Tests', () => {
         },
       });
       await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
         expect(store2.getState().multiplayer.hasHydrated).toBe(true);
       });
 
@@ -215,10 +226,11 @@ describe('Multiplayer Middleware Integration Tests', () => {
       subscribeToUpdatesFor: () => ['count'],
     });
     await waitFor(() => {
-      expect(store1.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
+      expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+      expect(store2.getState().multiplayer.hasHydrated).toBe(true);
     });
     await waitFor(() => {
-      expect(store2.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
+
     });
 
     store1.getState().setText('store 1 update');
@@ -264,18 +276,14 @@ describe('Multiplayer Middleware Integration Tests', () => {
   it.skipIf(skip)('should synchroize deleting record entries', async () => {
     const uniqueNamespace = createUniqueStoreName('granular-updates-test');
     const store1 = createTestStore({ namespace: uniqueNamespace });
-    
-    await waitFor(() => {
-      expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-    });
     const store2 = createTestStore({ namespace: uniqueNamespace });
 
     await waitFor(() => {
+      expect(store1.getState().multiplayer.hasHydrated).toBe(true);
       expect(store2.getState().multiplayer.hasHydrated).toBe(true);
     });
 
     store1.getState().addItem('item1');
-    await new Promise(resolve => setTimeout(resolve, 50));
     store1.getState().addItem('item2');
 
     await waitFor(() => {
@@ -308,11 +316,6 @@ describe('Multiplayer Middleware Integration Tests', () => {
           apiKey: undefined,
         });
 
-        // Wait for first store to be ready
-        await waitFor(() => {
-          expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-        });
-
         const store2 = createTestStore({
           namespace: uniqueNamespace,
           tokenGenerationUrl: serverInfo.serverUrl,
@@ -320,12 +323,11 @@ describe('Multiplayer Middleware Integration Tests', () => {
         });
 
         await waitFor(() => {
+          expect(store1.getState().multiplayer.hasHydrated).toBe(true);
           expect(store2.getState().multiplayer.hasHydrated).toBe(true);
         });
 
-        // Update state in first store
         store1.getState().increment();
-        await new Promise(resolve => setTimeout(resolve, 50));
         store1.getState().setText('Token URL Test');
 
         await waitFor(() => {
@@ -334,18 +336,14 @@ describe('Multiplayer Middleware Integration Tests', () => {
           expect(store2.getState().multiplayer.hasHydrated).toBe(true);
         });
 
-        // Update from second store
         store2.getState().updateNested(24);
 
-        // Verify first store received update
         await waitFor(() => {
           expect(store1.getState().nested.value).toBe(24);
         });
       } finally {
-        // Clean up the server
         serverInfo.server.close();
       }
     },
   );
-
 });

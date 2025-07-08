@@ -1,33 +1,30 @@
 import { ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
 import { StoreApi } from 'zustand/vanilla';
-import { HPKVStorage, HPKVChangeEvent } from '../storage/hpkv-storage';
 import { Logger, LogLevel, createLogger } from '../monitoring/logger';
 import { PerformanceMonitor, PerformanceMetrics } from '../monitoring/profiler';
+import { HPKVStorage, HPKVChangeEvent } from '../storage/hpkv-storage';
 import { StorageKeyManager } from '../storage/storage-key-manager';
-import { ConflictResolver, StateChange } from '../sync/conflict-resolver';
 import { StorageManager } from '../storage/storage-manager';
+import { ConflictResolver, StateChange } from '../sync/conflict-resolver';
 import { StateHydrator } from '../sync/state-hydrator';
 import { SyncQueueManager } from '../sync/sync-queue-manager';
-import { detectActualChanges } from '../utils/state-utils';
-import { normalizeError, getCurrentTimestamp } from '../utils';
-import type { 
-  MultiplayerOptions, 
-  MultiplayerState, 
-  PathExtractable
+import type {
+  MultiplayerOptions,
+  MultiplayerState,
+  PathExtractable,
 } from '../types/multiplayer-types';
-
-import { 
-  MULTIPLAYER_FIELD as MULTIPLAYER_STATE_KEY} from '../utils/constants';
-import { PathManager, StatePath, fromLegacyPath, toLegacyPath } from '../utils/path-manager';
+import { normalizeError, getCurrentTimestamp } from '../utils';
+import { PathManager, fromLegacyPath } from '../utils/path-manager';
+import { detectActualChanges } from '../utils/state-utils';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-type StateUpdateInput<TState> = 
-  | TState 
-  | Partial<TState> 
-  | ((state: TState) => TState | Partial<TState>) 
+type StateUpdateInput<TState> =
+  | TState
+  | Partial<TState>
+  | ((state: TState) => TState | Partial<TState>)
   | { changes: Partial<TState>; deletions: Array<{ path: string[] }> };
 
 type StateChangeWithDeletions<TState> = {
@@ -67,7 +64,12 @@ export class MultiplayerOrchestrator<TState> {
     this.connectionManager = new StorageManager(this.client, this.logger);
     this.conflictResolver = new ConflictResolver(this.logger);
     this.keyManager = new StorageKeyManager(options.namespace);
-    this.stateHydrator = new StateHydrator(this.client, this.logger, this.performanceMonitor, this.keyManager);
+    this.stateHydrator = new StateHydrator(
+      this.client,
+      this.logger,
+      this.performanceMonitor,
+      this.keyManager,
+    );
     this.syncQueueManager = new SyncQueueManager(this.logger);
     this.previousState = { ...this.api.getState() };
     this.setupEventListeners();
@@ -101,45 +103,56 @@ export class MultiplayerOrchestrator<TState> {
   }
 
   private async handleRemoteChange(event: HPKVChangeEvent): Promise<void> {
-      const parsed = this.keyManager.parseStorageKey(event.key);
-      const currentState = this.api.getState() as Record<string, any>;
-      
-      if (event.value === null) {
-        await this.handleRemoteDeletion(parsed, currentState);
-      } else {
-        await this.handleRemoteUpdate(parsed, event.value, currentState);
-      }
+    const parsed = this.keyManager.parseStorageKey(event.key);
+    const currentState = this.api.getState() as Record<string, any>;
+    this.logger.debug('Received remote change', {
+      operation: 'remote-change',
+      clientId: this.client.getClientId(),
+    });
+    if (event.value === null) {
+      await this.handleRemoteDeletion(parsed, currentState);
+    } else {
+      await this.handleRemoteUpdate(parsed, event.value, currentState);
+    }
   }
 
   private async handleRemoteDeletion(
-    parsed: { path: string[] }, 
-    currentState: Record<string, any>
+    parsed: { path: string[] },
+    currentState: Record<string, any>,
   ): Promise<void> {
     const stateUpdate = this.buildDeletionStateUpdate(parsed, currentState);
+    this.logger.debug(`Applying remote deletion. new state: ${JSON.stringify(stateUpdate)}`, {
+      operation: 'remote-deletion',
+      clientId: this.client.getClientId(),
+    });
     await this.applyStateChange(stateUpdate as Partial<TState>, false, true);
   }
 
   private async handleRemoteUpdate(
-    parsed: { path: string[] }, 
-    value: unknown, 
-    currentState: Record<string, any>
+    parsed: { path: string[] },
+    value: unknown,
+    currentState: Record<string, any>,
   ): Promise<void> {
     const stateUpdate = this.buildUpdateStateUpdate(parsed, value, currentState);
     await this.applyStateChange(stateUpdate as Partial<TState>, false, true);
   }
 
   private buildDeletionStateUpdate(
-    parsed: { path: string[] }, 
-    currentState: Record<string, any>
+    parsed: { path: string[] },
+    currentState: Record<string, any>,
   ): Record<string, any> {
     const statePath = fromLegacyPath(parsed.path);
-    return PathManager.buildDeleteUpdate(statePath, currentState, this.initialState as Record<string, unknown>);
+    return PathManager.buildDeleteUpdate(
+      statePath,
+      currentState,
+      this.initialState as Record<string, unknown>,
+    );
   }
 
   private buildUpdateStateUpdate(
-    parsed: { path: string[] }, 
-    value: unknown, 
-    currentState: Record<string, any>
+    parsed: { path: string[] },
+    value: unknown,
+    currentState: Record<string, any>,
   ): Record<string, any> {
     const statePath = fromLegacyPath(parsed.path);
     return PathManager.buildSetUpdate(statePath, value, currentState);
@@ -159,11 +172,9 @@ export class MultiplayerOrchestrator<TState> {
         await this.hydrate();
       }
     } catch (error) {
-      this.logger.error(
-        'Error handling connection state change',
-        normalizeError(error),
-        { operation: 'connection' },
-      );
+      this.logger.error('Error handling connection state change', normalizeError(error), {
+        operation: 'connection',
+      });
     }
   }
 
@@ -181,11 +192,7 @@ export class MultiplayerOrchestrator<TState> {
       await this.processConflictsAndPendingChanges();
       this.updateMultiplayerState({ hasHydrated: true });
     } catch (error) {
-      this.logger.error(
-        'Hydration failed',
-        normalizeError(error),
-        { operation: 'hydration' },
-      );
+      this.logger.error('Hydration failed', normalizeError(error), { operation: 'hydration' });
       throw error;
     }
   }
@@ -198,12 +205,12 @@ export class MultiplayerOrchestrator<TState> {
     } else {
       await this.processPendingChanges();
     }
-    
+
     this.stateBeforeDisconnection = null;
   }
 
   private async resolveConflictsAndApplyChanges(
-    pendingChanges: StateChange<TState>[]
+    pendingChanges: StateChange<TState>[],
   ): Promise<void> {
     const currentState = this.api.getState() as TState;
     const conflicts = this.conflictResolver.detectConflicts(
@@ -254,11 +261,9 @@ export class MultiplayerOrchestrator<TState> {
 
       this.performanceMonitor.recordStateChange();
     } catch (error) {
-      this.logger.error(
-        'Error applying state change',
-        normalizeError(error),
-        { operation: 'state-change' },
-      );
+      this.logger.error('Error applying state change', normalizeError(error), {
+        operation: 'state-change',
+      });
       throw error;
     }
   }
@@ -281,12 +286,14 @@ export class MultiplayerOrchestrator<TState> {
   }
 
   private isStateChangeWithDeletions(
-    partial: StateUpdateInput<TState>
+    partial: StateUpdateInput<TState>,
   ): partial is StateChangeWithDeletions<TState> {
-    return typeof partial === 'object' && 
-           partial !== null && 
-           'changes' in partial && 
-           'deletions' in partial;
+    return (
+      typeof partial === 'object' &&
+      partial !== null &&
+      'changes' in partial &&
+      'deletions' in partial
+    );
   }
 
   private updateApiState(state: TState | Partial<TState>, replace?: boolean): void {
@@ -298,10 +305,10 @@ export class MultiplayerOrchestrator<TState> {
   }
 
   private logStateChange(state: TState | Partial<TState>): void {
-    this.logger.debug(
-      `Updated local state for '${JSON.stringify(state)}'`,
-      { operation: 'state-change', clientId: this.client.getClientId() },
-    );
+    this.logger.debug(`Updated local state for '${JSON.stringify(state)}'`, {
+      operation: 'state-change',
+      clientId: this.client.getClientId(),
+    });
   }
 
   private updatePreviousStateTracking(): void {
@@ -313,15 +320,12 @@ export class MultiplayerOrchestrator<TState> {
   // ============================================================================
 
   private async syncStateToRemote(
-    state: Partial<TState>, 
-    deletions: Array<{ path: string[] }> = []
+    state: Partial<TState>,
+    deletions: Array<{ path: string[] }> = [],
   ): Promise<void> {
     const startTime = getCurrentTimestamp();
 
     if (!this.isValidStateForSync(state)) {
-      this.logger.warn(`Attempted to sync invalid state: ${state}`, {
-        operation: 'sync-state-to-remote',
-      });
       return;
     }
 
@@ -329,9 +333,6 @@ export class MultiplayerOrchestrator<TState> {
     const deletionPromises = this.createDeletionPromises(deletions);
 
     if (actualChanges.length === 0 && deletionPromises.length === 0) {
-      this.logger.debug('No changes detected, skipping sync', {
-        operation: 'sync-state-to-remote',
-      });
       return;
     }
 
@@ -343,15 +344,15 @@ export class MultiplayerOrchestrator<TState> {
   }
 
   private isValidStateForSync(state: Partial<TState>): boolean {
-    return state != null && typeof state === 'object';
+    return state !== null && typeof state === 'object';
   }
 
   private detectSerializableChanges(state: Partial<TState>) {
     const actualChanges = detectActualChanges(
-      this.previousState as PathExtractable, 
-      state as PathExtractable
+      this.previousState as PathExtractable,
+      state as PathExtractable,
     );
-    
+
     return actualChanges.filter(({ path, value }) => {
       return !this.shouldSkipPath(path, value);
     });
@@ -359,15 +360,15 @@ export class MultiplayerOrchestrator<TState> {
 
   private shouldSkipPath(path: string[], value: unknown): boolean {
     const statePath = fromLegacyPath(path);
-    
+
     if (PathManager.shouldSkipMultiplayerPrefix(statePath)) {
       return true;
     }
-    
+
     if (typeof value === 'function' || value === undefined) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -394,10 +395,7 @@ export class MultiplayerOrchestrator<TState> {
   // STATE CHANGE REQUEST HANDLING
   // ============================================================================
 
-  handleStateChangeRequest(
-    partial: StateUpdateInput<TState>,
-    replace?: boolean,
-  ): void {
+  handleStateChangeRequest(partial: StateUpdateInput<TState>, replace?: boolean): void {
     const connectionState = this.connectionManager.getConnectionState();
 
     if (this.shouldQueueStateChange(connectionState)) {
@@ -406,24 +404,24 @@ export class MultiplayerOrchestrator<TState> {
     }
 
     this.applyStateChange(partial, replace, false).catch(error => {
-      this.logger.error(
-        'Error applying local state change',
-        normalizeError(error),
-        { operation: 'state-change' },
-      );
+      this.logger.error('Error applying local state change', normalizeError(error), {
+        operation: 'state-change',
+      });
     });
   }
 
   private shouldQueueStateChange(connectionState: ConnectionState): boolean {
-    return !this.stateHydrator.getHydrationStatus() ||
-           connectionState === ConnectionState.DISCONNECTED ||
-           connectionState === ConnectionState.CONNECTING;
+    return (
+      !this.stateHydrator.getHydrationStatus() ||
+      connectionState === ConnectionState.DISCONNECTED ||
+      connectionState === ConnectionState.CONNECTING
+    );
   }
 
   private queueStateChange(
-    partial: StateUpdateInput<TState>, 
-    replace: boolean | undefined, 
-    connectionState: ConnectionState
+    partial: StateUpdateInput<TState>,
+    replace: boolean | undefined,
+    connectionState: ConnectionState,
   ): void {
     this.syncQueueManager.addPendingChange({ partial, replace } as Omit<
       StateChange<TState>,
@@ -445,16 +443,13 @@ export class MultiplayerOrchestrator<TState> {
   // ============================================================================
 
   private updateMultiplayerState(updates: Partial<MultiplayerState<TState>>): void {
-    this.api.setState(
-      state => {
-        const stateWithMultiplayer = state as TState & { multiplayer: MultiplayerState<TState> };
-        return {
-          ...state,
-          multiplayer: { ...stateWithMultiplayer.multiplayer, ...updates },
-        };
-      },
-      false,
-    );
+    this.api.setState(state => {
+      const stateWithMultiplayer = state as TState & { multiplayer: MultiplayerState<TState> };
+      return {
+        ...state,
+        multiplayer: { ...stateWithMultiplayer.multiplayer, ...updates },
+      };
+    }, false);
   }
 
   // ============================================================================
@@ -504,4 +499,4 @@ export class MultiplayerOrchestrator<TState> {
     this.stateHydrator.resetHydrationStatus();
     this.syncQueueManager.clearPendingChanges();
   }
-} 
+}

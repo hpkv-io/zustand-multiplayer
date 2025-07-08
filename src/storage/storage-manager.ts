@@ -1,7 +1,7 @@
 import { ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
-import { HPKVStorage } from './hpkv-storage';
 import { Logger } from '../monitoring/logger';
 import { normalizeError, clearTimeoutSafely } from '../utils';
+import { HPKVStorage } from './hpkv-storage';
 
 // ============================================================================
 // Storage Manager
@@ -30,11 +30,9 @@ export class StorageManager {
         try {
           listener(state);
         } catch (error) {
-          this.logger.error(
-            'Error in connection listener',
-            normalizeError(error),
-            { operation: 'connection' },
-          );
+          this.logger.error('Error in connection listener', normalizeError(error), {
+            operation: 'connection',
+          });
         }
       });
     });
@@ -77,4 +75,4 @@ export class StorageManager {
     this.clearReconnectTimeout();
     this.connectionListeners.length = 0;
   }
-} 
+}

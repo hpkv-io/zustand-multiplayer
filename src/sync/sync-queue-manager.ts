@@ -1,6 +1,6 @@
-import { StateChange } from './conflict-resolver';
 import { Logger } from '../monitoring/logger';
 import { normalizeError, getCurrentTimestamp, generateId } from '../utils';
+import { StateChange } from './conflict-resolver';
 
 // ============================================================================
 // Sync Queue Manager
@@ -10,9 +10,7 @@ export class SyncQueueManager<TState> {
   private pendingChanges: StateChange<TState>[] = [];
   private isProcessing = false;
 
-  constructor(
-    private logger: Logger,
-  ) {}
+  constructor(private logger: Logger) {}
 
   addPendingChange(change: Omit<StateChange<TState>, 'timestamp' | 'id'>): void {
     const fullChange: StateChange<TState> = {
@@ -56,14 +54,12 @@ export class SyncQueueManager<TState> {
         // Note: recordStateChange() is called in applyStateChange() to avoid double counting
       }
     } catch (error) {
-      this.logger.error(
-        'Error processing offline changes',
-        normalizeError(error),
-        { operation: 'sync-queue' },
-      );
+      this.logger.error('Error processing offline changes', normalizeError(error), {
+        operation: 'sync-queue',
+      });
       throw error;
     } finally {
       this.isProcessing = false;
     }
   }
-} 
+}

@@ -189,6 +189,4 @@ export class ConflictResolver<TState> {
     }
     return Object.keys(partial as Record<string, unknown>).length > 0;
   }
-
-
 }

@@ -6,15 +6,20 @@ import {
   ConnectionState as HPKVConnectionState,
   ConnectionConfig,
 } from '@hpkv/websocket-client';
-import { Logger } from '../monitoring/logger';
-import { OperationTracker, createOperationTracker } from '../core/operation-tracker';
-import { RetryConfig, RetryManager, createRetryManager } from '../network/retry';
 import { TokenHelper, TokenResponse } from '../auth/token-helper';
-import { generateClientId, normalizeError, getCurrentTimestamp, clearTimeoutSafely } from '../utils';
-import { StorageKeyManager } from './storage-key-manager';
 import { SecureTokenCache } from '../auth/token-manager';
-import { ConnectionManager } from './connection-manager';
+import { OperationTracker, createOperationTracker } from '../core/operation-tracker';
+import { Logger } from '../monitoring/logger';
 import { BrowserConnectivityManager } from '../network/connectivity-manager';
+import { RetryConfig, RetryManager, createRetryManager } from '../network/retry';
+import {
+  generateClientId,
+  normalizeError,
+  getCurrentTimestamp,
+  clearTimeoutSafely,
+} from '../utils';
+import { ConnectionManager } from './connection-manager';
+import { StorageKeyManager } from './storage-key-manager';
 
 export interface HPKVChangeEvent {
   key: string;
@@ -101,7 +106,7 @@ export interface HPKVStorage {
    * Removes the value for a specific key in the storage.
    * @param key - The key of the item to remove.
    * @returns A promise that resolves when the item is removed.
-   */ 
+   */
   removeItem(key: string): Promise<void>;
 
   /**
@@ -116,10 +121,6 @@ export interface HPKVStorage {
    */
   destroy(): Promise<void>;
 }
-
-
-
-
 
 /**
  * HPKV storage implementation that provides getItem, setItem, and removeItem methods
@@ -172,7 +173,7 @@ class HPKVStorageImpl implements HPKVStorage {
     if (!storageOptions.namespace) {
       throw new Error('namespace is required');
     }
-    
+
     this.storageOptions = storageOptions;
     this.namespace = storageOptions.namespace;
     this.subscribedKeys = subscribedKeys;
@@ -210,11 +211,10 @@ class HPKVStorageImpl implements HPKVStorage {
   private handleBrowserOnline(): void {
     // Attempt to reconnect when browser comes back online
     this.ensureConnection().catch(error => {
-      this.logger.error(
-        'Failed to reconnect after coming online',
-        normalizeError(error),
-        { operation: 'online-reconnect', clientId: this.clientId },
-      );
+      this.logger.error('Failed to reconnect after coming online', normalizeError(error), {
+        operation: 'online-reconnect',
+        clientId: this.clientId,
+      });
     });
   }
 
@@ -327,11 +327,10 @@ class HPKVStorageImpl implements HPKVStorage {
         };
         this.notifyChangeListeners(changeEvent);
       } catch (error) {
-        this.logger.error(
-          `Failed to process change for key ${data.key}`,
-          normalizeError(error),
-          { operation: 'change-processing', clientId: this.clientId },
-        );
+        this.logger.error(`Failed to process change for key ${data.key}`, normalizeError(error), {
+          operation: 'change-processing',
+          clientId: this.clientId,
+        });
       }
     });
 
@@ -351,11 +350,10 @@ class HPKVStorageImpl implements HPKVStorage {
       try {
         listener(event);
       } catch (error) {
-        this.logger.error(
-          'Error in global listener',
-          normalizeError(error),
-          { operation: 'change-listener', clientId: this.clientId },
-        );
+        this.logger.error('Error in global listener', normalizeError(error), {
+          operation: 'change-listener',
+          clientId: this.clientId,
+        });
       }
     }
   }
@@ -365,11 +363,10 @@ class HPKVStorageImpl implements HPKVStorage {
       try {
         listener(state);
       } catch (error) {
-        this.logger.error(
-          'Error in connection listener',
-          normalizeError(error),
-          { operation: 'connection-listener', clientId: this.clientId },
-        );
+        this.logger.error('Error in connection listener', normalizeError(error), {
+          operation: 'connection-listener',
+          clientId: this.clientId,
+        });
       }
     }
   }
@@ -433,7 +430,7 @@ class HPKVStorageImpl implements HPKVStorage {
         this.storageOptions.apiBaseUrl,
       );
       const fullSubscribedKeys = this.subscribedKeys.map(key => this.keyManager.getFullKey(key));
-      
+
       token = await tokenHelper.generateTokenForStore(this.namespace, fullSubscribedKeys);
     } else if (this.storageOptions.tokenGenerationUrl) {
       token = await this.fetchToken();
@@ -452,11 +449,10 @@ class HPKVStorageImpl implements HPKVStorage {
     if (refreshDelay > 0) {
       this.tokenRefreshTimer = setTimeout(() => {
         this.refreshToken().catch(error => {
-          this.logger.error(
-            'Failed to refresh token automatically',
-            normalizeError(error),
-            { operation: 'token-refresh', clientId: this.clientId },
-          );
+          this.logger.error('Failed to refresh token automatically', normalizeError(error), {
+            operation: 'token-refresh',
+            clientId: this.clientId,
+          });
         });
       }, refreshDelay);
     }
@@ -496,11 +492,10 @@ class HPKVStorageImpl implements HPKVStorage {
       // Reconnect with new token
       await this.ensureConnection();
     } catch (error) {
-      this.logger.error(
-        'Failed to refresh token and reconnect',
-        normalizeError(error),
-        { operation: 'token-refresh', clientId: this.clientId },
-      );
+      this.logger.error('Failed to refresh token and reconnect', normalizeError(error), {
+        operation: 'token-refresh',
+        clientId: this.clientId,
+      });
     }
   }
 
@@ -519,7 +514,9 @@ class HPKVStorageImpl implements HPKVStorage {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           namespace: this.namespace,
-          subscribedKeysAndPatterns: this.subscribedKeys.map(key => this.keyManager.getFullKey(key)),
+          subscribedKeysAndPatterns: this.subscribedKeys.map(key =>
+            this.keyManager.getFullKey(key),
+          ),
         }),
       });
       if (!response.ok) {
@@ -590,8 +587,6 @@ class HPKVStorageImpl implements HPKVStorage {
     return this.connectionPromise;
   }
 
-
-
   /**
    * Waits for all running operations to complete with a timeout
    * @param timeoutMs Maximum time to wait in milliseconds
@@ -617,10 +612,13 @@ class HPKVStorageImpl implements HPKVStorage {
           key: this.keyManager.getKeyWithoutPrefix(item.key),
           value: JSON.parse(item.value) as StoredValue,
         }));
-        
+
         // Filter items based on published keys permissions
-        const filteredItems = this.keyManager.filterItemsByPublishedKeys(normalizedItems, this.publishedKeys);
-        
+        const filteredItems = this.keyManager.filterItemsByPublishedKeys(
+          normalizedItems,
+          this.publishedKeys,
+        );
+
         return new Map(filteredItems.map(item => [item.key, item.value.value]));
       }, 'getAllItems');
     };
@@ -630,19 +628,17 @@ class HPKVStorageImpl implements HPKVStorage {
 
   async setItem(key: string, value: unknown): Promise<void> {
     this.checkDestroyed();
-    
-    const operation = async (): Promise<void> => {
 
+    const operation = async (): Promise<void> => {
       const logicalKey = this.keyManager.extractLogicalKey(key);
       const isAllowed = this.keyManager.isKeyAllowedToPublish(logicalKey, this.publishedKeys);
-      
+
       if (!isAllowed) {
         return Promise.resolve();
       }
-      
+
       await this.ensureConnection();
-      
-      
+
       const fullKey = this.keyManager.ensureNamespacePrefix(key);
       const valueToStore: StoredValue = {
         value,
@@ -650,13 +646,12 @@ class HPKVStorageImpl implements HPKVStorage {
         timestamp: getCurrentTimestamp(),
       };
       const stringValue = JSON.stringify(valueToStore);
-      
+
       await this.client?.set(fullKey, stringValue, true).catch(error => {
-        this.logger.error(
-          'Failed to set item',
-          normalizeError(error),
-          { operation: 'setItem', clientId: this.clientId },
-        );
+        this.logger.error('Failed to set item', normalizeError(error), {
+          operation: 'setItem',
+          clientId: this.clientId,
+        });
       });
     };
 
@@ -733,7 +728,6 @@ class HPKVStorageImpl implements HPKVStorage {
     return this.clientId;
   }
 
-
   registerCleanup(callback: () => void): void {
     this.cleanupCallbacks.add(callback);
   }
@@ -747,11 +741,10 @@ class HPKVStorageImpl implements HPKVStorage {
       try {
         cleanup();
       } catch (error) {
-        this.logger.error(
-          'Cleanup callback failed',
-          normalizeError(error),
-          { operation: 'cleanup', clientId: this.clientId },
-        );
+        this.logger.error('Cleanup callback failed', normalizeError(error), {
+          operation: 'cleanup',
+          clientId: this.clientId,
+        });
       }
     }
 

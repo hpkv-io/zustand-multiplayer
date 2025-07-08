@@ -59,20 +59,20 @@ export class LRUCache<K, V> {
   private ttl: number;
   private cleanupInterval: number;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  
+
   // Statistics
   private stats = {
     hits: 0,
     misses: 0,
     evictions: 0,
-    totalAccesses: 0
+    totalAccesses: 0,
   };
 
   constructor(config: CacheConfig = {}) {
     this.maxSize = config.maxSize || 1000;
     this.ttl = config.ttl || 5 * 60 * 1000; // 5 minutes default
     this.cleanupInterval = config.cleanupInterval || 60 * 1000; // 1 minute default
-    
+
     this.startCleanupTimer();
   }
 
@@ -81,29 +81,29 @@ export class LRUCache<K, V> {
    */
   get(key: K): V | undefined {
     this.stats.totalAccesses++;
-    
+
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       this.stats.misses++;
       return undefined;
     }
-    
+
     // Check if entry is expired
     if (this.isExpired(entry)) {
       this.cache.delete(key);
       this.stats.misses++;
       return undefined;
     }
-    
+
     // Update access metadata
     entry.accessCount++;
     entry.lastAccessed = getCurrentTimestamp();
-    
+
     // Move to end (most recently used)
     this.cache.delete(key);
     this.cache.set(key, entry);
-    
+
     this.stats.hits++;
     return entry.value;
   }
@@ -113,31 +113,31 @@ export class LRUCache<K, V> {
    */
   set(key: K, value: V): void {
     const now = getCurrentTimestamp();
-    
+
     // If key already exists, update it
     if (this.cache.has(key)) {
       const entry = this.cache.get(key)!;
       entry.value = value;
       entry.timestamp = now;
       entry.lastAccessed = now;
-      
+
       // Move to end
       this.cache.delete(key);
       this.cache.set(key, entry);
       return;
     }
-    
+
     // Check size limit
     if (this.cache.size >= this.maxSize) {
       this.evictLeastRecentlyUsed();
     }
-    
+
     // Add new entry
     this.cache.set(key, {
       value,
       timestamp: now,
       accessCount: 1,
-      lastAccessed: now
+      lastAccessed: now,
     });
   }
 
@@ -153,16 +153,16 @@ export class LRUCache<K, V> {
    */
   has(key: K): boolean {
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       return false;
     }
-    
+
     if (this.isExpired(entry)) {
       this.cache.delete(key);
       return false;
     }
-    
+
     return true;
   }
 
@@ -191,7 +191,7 @@ export class LRUCache<K, V> {
       misses: this.stats.misses,
       hitRate: this.stats.totalAccesses > 0 ? this.stats.hits / this.stats.totalAccesses : 0,
       evictions: this.stats.evictions,
-      totalAccesses: this.stats.totalAccesses
+      totalAccesses: this.stats.totalAccesses,
     };
   }
 
@@ -233,13 +233,13 @@ export class LRUCache<K, V> {
   private cleanupExpired(): void {
     const now = getCurrentTimestamp();
     const keysToDelete: K[] = [];
-    
+
     for (const [key, entry] of this.cache.entries()) {
       if (now - entry.timestamp > this.ttl) {
         keysToDelete.push(key);
       }
     }
-    
+
     for (const key of keysToDelete) {
       this.cache.delete(key);
     }
@@ -295,7 +295,7 @@ export class WeakCache<K extends object, V> {
   private stats = {
     hits: 0,
     misses: 0,
-    sets: 0
+    sets: 0,
   };
 
   /**
@@ -303,12 +303,12 @@ export class WeakCache<K extends object, V> {
    */
   get(key: K): V | undefined {
     const value = this.cache.get(key);
-    
+
     if (value !== undefined) {
       this.stats.hits++;
       return value;
     }
-    
+
     this.stats.misses++;
     return undefined;
   }
@@ -343,8 +343,10 @@ export class WeakCache<K extends object, V> {
       hits: this.stats.hits,
       misses: this.stats.misses,
       sets: this.stats.sets,
-      hitRate: this.stats.hits + this.stats.misses > 0 ? 
-        this.stats.hits / (this.stats.hits + this.stats.misses) : 0
+      hitRate:
+        this.stats.hits + this.stats.misses > 0
+          ? this.stats.hits / (this.stats.hits + this.stats.misses)
+          : 0,
     };
   }
 }
@@ -365,32 +367,32 @@ function defaultKeyGenerator(...args: any[]): string {
  */
 export function memoize<TArgs extends any[], TReturn>(
   fn: (...args: TArgs) => TReturn,
-  options: MemoizeOptions = {}
+  options: MemoizeOptions = {},
 ): (...args: TArgs) => TReturn {
   const {
     maxSize = 100,
     ttl = 5 * 60 * 1000, // 5 minutes
     keyGenerator = defaultKeyGenerator,
-    weakRef = false
+    weakRef = false,
   } = options;
 
   if (weakRef) {
     // Use WeakMap for object-based memoization
     const cache = new WeakMap<object, TReturn>();
-    
+
     return (...args: TArgs): TReturn => {
       // Find the first object argument to use as key
       const objectKey = args.find(arg => typeof arg === 'object' && arg !== null);
-      
+
       if (!objectKey) {
         // Fallback to regular function call if no object key
         return fn(...args);
       }
-      
+
       if (cache.has(objectKey)) {
         return cache.get(objectKey)!;
       }
-      
+
       const result = fn(...args);
       cache.set(objectKey, result);
       return result;
@@ -398,15 +400,15 @@ export function memoize<TArgs extends any[], TReturn>(
   } else {
     // Use LRU cache for string-based memoization
     const cache = new LRUCache<string, TReturn>({ maxSize, ttl });
-    
+
     return (...args: TArgs): TReturn => {
       const key = keyGenerator(...args);
-      
+
       const cached = cache.get(key);
       if (cached !== undefined) {
         return cached;
       }
-      
+
       const result = fn(...args);
       cache.set(key, result);
       return result;
@@ -421,7 +423,7 @@ export function Memoize(options: MemoizeOptions = {}) {
   return function <T extends any[], R>(
     target: any,
     propertyKey: string,
-    descriptor: TypedPropertyDescriptor<(...args: T) => R>
+    descriptor: TypedPropertyDescriptor<(...args: T) => R>,
   ) {
     if (descriptor.value) {
       descriptor.value = memoize(descriptor.value, options);
@@ -444,7 +446,10 @@ export class PathExtractionCache {
   /**
    * Get cached path extraction result
    */
-  get(obj: object, parentPath: string[] = []): Array<{ path: string[]; value: SerializableValue }> | undefined {
+  get(
+    obj: object,
+    parentPath: string[] = [],
+  ): Array<{ path: string[]; value: SerializableValue }> | undefined {
     const key = this.generateKey(obj, parentPath);
     return this.cache.get(key);
   }
@@ -453,9 +458,9 @@ export class PathExtractionCache {
    * Set cached path extraction result
    */
   set(
-    obj: object, 
-    parentPath: string[] = [], 
-    result: Array<{ path: string[]; value: SerializableValue }>
+    obj: object,
+    parentPath: string[] = [],
+    result: Array<{ path: string[]; value: SerializableValue }>,
   ): void {
     const key = this.generateKey(obj, parentPath);
     this.cache.set(key, result);
@@ -476,7 +481,7 @@ export class PathExtractionCache {
   private getObjectHash(obj: object): string {
     const cached = this.hashCache.get(obj);
     if (cached) return cached;
-    
+
     const hash = this.createObjectHash(obj);
     this.hashCache.set(obj, hash);
     return hash;
@@ -489,13 +494,13 @@ export class PathExtractionCache {
     try {
       const str = JSON.stringify(obj);
       let hash = 0;
-      
+
       for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
+        hash = (hash << 5) - hash + char;
         hash = hash & hash; // Convert to 32-bit integer
       }
-      
+
       return hash.toString(36);
     } catch {
       // Fallback to timestamp-based hash for circular references
@@ -516,7 +521,7 @@ export class PathExtractionCache {
   getStats() {
     return {
       pathCache: this.cache.getStats(),
-      hashCache: this.hashCache.getStats()
+      hashCache: this.hashCache.getStats(),
     };
   }
 }
@@ -526,7 +531,7 @@ export class PathExtractionCache {
  */
 export class DeepEqualityCache {
   private cache = new LRUCache<string, boolean>();
-  
+
   /**
    * Get cached deep equality result
    */
@@ -550,7 +555,7 @@ export class DeepEqualityCache {
     try {
       const keyA = typeof a === 'object' ? JSON.stringify(a) : String(a);
       const keyB = typeof b === 'object' ? JSON.stringify(b) : String(b);
-      
+
       // Sort keys to ensure consistent ordering
       return keyA < keyB ? `${keyA}:${keyB}` : `${keyB}:${keyA}`;
     } catch {
@@ -583,7 +588,7 @@ export class DeepEqualityCache {
  */
 export class CacheManager {
   private static instance: CacheManager;
-  
+
   public readonly pathExtractionCache = new PathExtractionCache();
   public readonly deepEqualityCache = new DeepEqualityCache();
   public readonly storageKeyCache = new LRUCache<string, string>();
@@ -619,7 +624,7 @@ export class CacheManager {
       pathExtraction: this.pathExtractionCache.getStats(),
       deepEquality: this.deepEqualityCache.getStats(),
       storageKey: this.storageKeyCache.getStats(),
-      stateReconstruction: this.stateReconstructionCache.getStats()
+      stateReconstruction: this.stateReconstructionCache.getStats(),
     };
   }
 
@@ -657,4 +662,4 @@ export function createLRUCache<K, V>(config?: CacheConfig): LRUCache<K, V> {
  */
 export function createWeakCache<K extends object, V>(): WeakCache<K, V> {
   return new WeakCache<K, V>();
-} 
+}
