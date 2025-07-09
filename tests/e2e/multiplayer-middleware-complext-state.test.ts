@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../src/types/multiplayer-types';
-import { createUniqueStoreName, waitFor } from './utils/test-utils';
-import { MockTokenHelper } from './mocks/mock-token-manager';
-import { MockWebsocketTokenManager } from './mocks/mock-token-manager';
-import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';
+import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
+import { createUniqueStoreName, waitFor } from '../utils/test-utils';
+import { MockTokenHelper } from '../mocks/mock-token-manager';
+import { MockWebsocketTokenManager } from '../mocks/mock-token-manager';
+import { MockHPKVClientFactory } from '../mocks/mock-hpkv-client';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -18,13 +18,13 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/auth/token-helper', () => {
+vi.doMock('../../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
 });
 
-const { StoreCreator } = await import('./utils/store-creator');
+const { StoreCreator } = await import('../utils/store-creator');
 
 interface ComplexState {
   items: Array<{

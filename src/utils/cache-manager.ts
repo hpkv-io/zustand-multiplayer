@@ -20,8 +20,8 @@ interface CacheEntry<T> {
  */
 interface CacheConfig {
   maxSize?: number;
-  ttl?: number; // Time to live in milliseconds
-  cleanupInterval?: number; // Cleanup interval in milliseconds
+  ttl?: number;
+  cleanupInterval?: number;
 }
 
 /**
@@ -36,16 +36,6 @@ export interface CacheStats {
   totalAccesses: number;
 }
 
-/**
- * Memoization options
- */
-interface MemoizeOptions {
-  maxSize?: number;
-  ttl?: number;
-  keyGenerator?: (...args: any[]) => string;
-  weakRef?: boolean;
-}
-
 // ============================================================================
 // LRU CACHE IMPLEMENTATION
 // ============================================================================
@@ -58,7 +48,7 @@ export class LRUCache<K, V> {
   private maxSize: number;
   private ttl: number;
   private cleanupInterval: number;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   // Statistics
   private stats = {
@@ -352,87 +342,6 @@ export class WeakCache<K extends object, V> {
 }
 
 // ============================================================================
-// MEMOIZATION UTILITIES
-// ============================================================================
-
-/**
- * Default key generator for memoization
- */
-function defaultKeyGenerator(...args: any[]): string {
-  return JSON.stringify(args);
-}
-
-/**
- * Create a memoized version of a function
- */
-export function memoize<TArgs extends any[], TReturn>(
-  fn: (...args: TArgs) => TReturn,
-  options: MemoizeOptions = {},
-): (...args: TArgs) => TReturn {
-  const {
-    maxSize = 100,
-    ttl = 5 * 60 * 1000, // 5 minutes
-    keyGenerator = defaultKeyGenerator,
-    weakRef = false,
-  } = options;
-
-  if (weakRef) {
-    // Use WeakMap for object-based memoization
-    const cache = new WeakMap<object, TReturn>();
-
-    return (...args: TArgs): TReturn => {
-      // Find the first object argument to use as key
-      const objectKey = args.find(arg => typeof arg === 'object' && arg !== null);
-
-      if (!objectKey) {
-        // Fallback to regular function call if no object key
-        return fn(...args);
-      }
-
-      if (cache.has(objectKey)) {
-        return cache.get(objectKey)!;
-      }
-
-      const result = fn(...args);
-      cache.set(objectKey, result);
-      return result;
-    };
-  } else {
-    // Use LRU cache for string-based memoization
-    const cache = new LRUCache<string, TReturn>({ maxSize, ttl });
-
-    return (...args: TArgs): TReturn => {
-      const key = keyGenerator(...args);
-
-      const cached = cache.get(key);
-      if (cached !== undefined) {
-        return cached;
-      }
-
-      const result = fn(...args);
-      cache.set(key, result);
-      return result;
-    };
-  }
-}
-
-/**
- * Memoization decorator for class methods
- */
-export function Memoize(options: MemoizeOptions = {}) {
-  return function <T extends any[], R>(
-    target: any,
-    propertyKey: string,
-    descriptor: TypedPropertyDescriptor<(...args: T) => R>,
-  ) {
-    if (descriptor.value) {
-      descriptor.value = memoize(descriptor.value, options);
-    }
-    return descriptor;
-  };
-}
-
-// ============================================================================
 // SPECIALIZED CACHES
 // ============================================================================
 
@@ -498,12 +407,11 @@ export class PathExtractionCache {
       for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i);
         hash = (hash << 5) - hash + char;
-        hash = hash & hash; // Convert to 32-bit integer
+        hash = hash & hash;
       }
 
       return hash.toString(36);
     } catch {
-      // Fallback to timestamp-based hash for circular references
       return Date.now().toString(36) + Math.random().toString(36);
     }
   }

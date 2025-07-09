@@ -6,14 +6,14 @@ import styles from './ConnectionStatus.module.css';
 import { ConnectionState } from '@hpkv/websocket-client';
 
 const ConnectionStatus: React.FC = () => {
-  const multiplayer = useTodoStore((state) => state.multiplayer);
+  const {connectionState} = useTodoStore((state) => state.multiplayer);
 
   return (
     <div className={styles['connection-status']}>
       <div
-        className={`${styles['status-indicator']} ${styles[multiplayer.connectionState === ConnectionState.CONNECTED ? 'connected' : 'disconnected']}`}
+        className={`${styles['status-indicator']} ${styles[connectionState === ConnectionState.CONNECTED ? 'connected' : 'disconnected']}`}
       />
-      <span>{multiplayer.connectionState}</span>
+      <span>{connectionState}</span>
     </div>
   );
 };

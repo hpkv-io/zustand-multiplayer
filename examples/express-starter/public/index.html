@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ToDo App</title>
+    <title>Collaborative ToDo List App</title>
     <meta name="description" content="A clean, minimalistic ToDo app with a modern design">
     <link rel="icon" href="/favicon.ico">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
@@ -97,33 +97,31 @@
             const todoStore = createStore(
               multiplayer(
                 (set) => ({
-                  todos: [],
+                  todos: {},
                   
                   addTodo: (text) => 
-                    set((state) => ({
-                      todos: [
-                        ...state.todos,
-                        {
-                          id: Date.now().toString(),
-                          text,
-                          completed: false,
-                        },
-                      ],
-                    })),
+                    set((state) => {
+                      const newTodo = {
+                        id: Date.now().toString(),
+                        text,
+                        completed: false,
+                      };
+                      state.todos[newTodo.id] = newTodo;
+                    }),
                     
                   toggleTodo: (id) =>
-                    set((state) => ({
-                      todos: state.todos.map((todo) =>
-                        todo.id === id
-                          ? { ...todo, completed: !todo.completed }
-                          : todo
-                      ),
-                    })),
+                    set((state) => {
+                      if (state.todos[id]) {
+                        state.todos[id].completed = !state.todos[id].completed;
+                      }
+                    }),
                     
                   removeTodo: (id) =>
-                    set((state) => ({
-                      todos: state.todos.filter((todo) => todo.id !== id),
-                    })),
+                    set((state) => {
+                      if (state.todos[id]) {
+                        delete state.todos[id];
+                      }
+                    }),
                 }),
                 {
                   namespace: 'todo-store',
@@ -178,7 +176,7 @@
 
             function renderTodos(todos) {
               // Filter todos based on current filter
-              const filteredTodos = todos.filter(todo => {
+              const filteredTodos = Object.values(todos).filter(todo => {
                 if (currentFilter === 'all') return true;
                 if (currentFilter === 'active') return !todo.completed;
                 if (currentFilter === 'completed') return todo.completed;
@@ -206,12 +204,12 @@
                     type="checkbox"
                     ${todo.completed ? 'checked' : ''}
                     class="todo-checkbox"
-                    data-id="${todo.id}"
+                    data-id="${todo.id ?? Date.now().toString()}"
                   />
                   <span class="todo-text">${escapeHtml(todo.text)}</span>
                   <button
                     class="delete-button"
-                    data-id="${todo.id}"
+                    data-id="${todo.id ?? Date.now().toString()}"
                     aria-label="Delete task"
                   >
                     &times;

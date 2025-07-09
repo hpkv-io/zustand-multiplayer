@@ -19,7 +19,6 @@ export class BrowserConnectivityManager {
   private isDestroyed: boolean = false;
 
   constructor() {
-    // Detect if we're in a browser environment
     this.isBrowser = typeof window !== 'undefined' && typeof navigator !== 'undefined';
 
     if (this.isBrowser) {
@@ -27,7 +26,6 @@ export class BrowserConnectivityManager {
       window.addEventListener('online', this.handleOnline);
       window.addEventListener('offline', this.handleOffline);
     } else {
-      // In Node.js environment, assume we're always online
       this.isOnline = true;
     }
   }
@@ -53,8 +51,6 @@ export class BrowserConnectivityManager {
       try {
         listener(isOnline);
       } catch (error) {
-        // Use console.warn instead of console.error for listener errors
-        // as these are not critical to the application functioning
         console.warn('Error in connectivity listener:', error);
       }
     }
@@ -68,7 +64,7 @@ export class BrowserConnectivityManager {
   addListener(listener: ConnectivityListener): CleanupFunction {
     if (this.isDestroyed) {
       console.warn('Attempting to add listener to destroyed connectivity manager');
-      return () => {}; // Return no-op cleanup function
+      return () => {};
     }
 
     this.listeners.add(listener);

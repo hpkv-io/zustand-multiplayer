@@ -20,7 +20,10 @@ export class StorageManager {
 
   private setupConnectionListener(): void {
     this.client.addConnectionListener((state: ConnectionState) => {
-      this.logger.info(`Connection state changed to ${state}`, { operation: 'connection' });
+      this.logger.info(`Connection state changed to ${state}`, {
+        operation: 'connection',
+        clientId: this.client.getClientId(),
+      });
 
       if (state === ConnectionState.CONNECTED) {
         this.clearReconnectTimeout();

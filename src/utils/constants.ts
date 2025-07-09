@@ -25,4 +25,4 @@ export const DISPLAY_PATH_SEPARATOR = '.';
 /**
  * Maximum depth for recursive operations to prevent infinite recursion
  */
-export const MAX_DEPTH = 10;
+export const MAX_DEPTH = 2;

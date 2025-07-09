@@ -1,4 +1,3 @@
-import { SerializableValue } from '../types/multiplayer-types';
 import {
   PATH_SEPARATOR,
   DISPLAY_PATH_SEPARATOR,
@@ -18,14 +17,6 @@ export interface StatePath {
   segments: string[];
   depth: number;
   isNested: boolean;
-}
-
-/**
- * Represents a path with its associated value
- */
-export interface PathValue<T = SerializableValue> {
-  path: StatePath;
-  value: T;
 }
 
 /**
@@ -176,7 +167,6 @@ export class PathManager {
     }
 
     let current = obj;
-    let parent = obj;
 
     for (let i = 0; i < path.segments.length; i++) {
       const segment = path.segments[i];
@@ -186,7 +176,6 @@ export class PathManager {
       }
 
       if (i === path.segments.length - 1) {
-        // Last segment - return parent context
         return {
           found: segment in current,
           value: current[segment] as T,
@@ -195,7 +184,6 @@ export class PathManager {
         };
       }
 
-      parent = current;
       current = current[segment] as Record<string, unknown>;
     }
 
@@ -275,7 +263,6 @@ export class PathManager {
     for (let i = 0; i < path.segments.length - 1; i++) {
       const segment = path.segments[i];
 
-      // Clone existing nested objects to preserve immutability
       if (PathManager.shouldCloneExistingObject(currentStateTraversal, segment)) {
         current[segment] = { ...(currentStateTraversal![segment] as Record<string, unknown>) };
       } else {
@@ -286,7 +273,6 @@ export class PathManager {
       currentStateTraversal = currentStateTraversal?.[segment] as Record<string, unknown>;
     }
 
-    // Set the final value
     const lastSegment = path.segments[path.segments.length - 1];
     current[lastSegment] = value;
 
@@ -301,6 +287,11 @@ export class PathManager {
     currentState: Record<string, unknown>,
     initialState?: Record<string, unknown>,
   ): Record<string, unknown> {
+    const pathExists = PathManager.hasPath(currentState, path);
+    if (!pathExists) {
+      return {};
+    }
+
     const update: Record<string, unknown> = {};
     let current = update;
     let currentStateTraversal = currentState;
@@ -312,14 +303,14 @@ export class PathManager {
       if (PathManager.shouldCloneExistingObject(currentStateTraversal, segment)) {
         current[segment] = { ...(currentStateTraversal[segment] as Record<string, unknown>) };
       } else {
-        current[segment] = {};
+        return {};
       }
 
       current = current[segment] as Record<string, unknown>;
       currentStateTraversal = currentStateTraversal?.[segment] as Record<string, unknown>;
     }
 
-    PathManager.processDeletion(path, current, update, initialState);
+    PathManager.processDeletion(path, current, update, initialState, currentState);
 
     return update;
   }
@@ -332,11 +323,12 @@ export class PathManager {
     current: Record<string, unknown>,
     stateUpdate: Record<string, unknown>,
     initialState?: Record<string, unknown>,
+    currentState?: Record<string, unknown>,
   ): void {
     const lastSegment = path.segments[path.segments.length - 1];
 
     if (path.depth >= 3) {
-      PathManager.handleNestedDeletion(path, current, stateUpdate);
+      PathManager.handleNestedDeletion(path, current, stateUpdate, currentState);
     } else if (path.depth === 1) {
       PathManager.handleTopLevelDeletion(path, stateUpdate, initialState);
     } else {
@@ -351,20 +343,44 @@ export class PathManager {
     path: StatePath,
     current: Record<string, unknown>,
     stateUpdate: Record<string, unknown>,
+    currentState?: Record<string, unknown>,
   ): void {
     const lastSegment = path.segments[path.segments.length - 1];
     delete current[lastSegment];
 
-    // Check if parent object is empty and should be removed
-    if (Object.keys(current).length === 0 && path.depth >= 3) {
+    if (path.depth >= 3 && currentState) {
       const parentPath = PathManager.getParent(path);
-      const grandparentPath = PathManager.getParent(parentPath);
 
-      // Navigate to grandparent in the state update
-      const grandparentResult = PathManager.navigate(stateUpdate, grandparentPath);
+      const parentResult = PathManager.navigate(currentState, parentPath);
 
-      if (grandparentResult.found && grandparentResult.parent && grandparentResult.key) {
-        delete grandparentResult.parent[grandparentResult.key];
+      if (parentResult.found && parentResult.value && isPlainObject(parentResult.value)) {
+        const parentObject = parentResult.value as Record<string, unknown>;
+
+        const remainingKeys = Object.keys(parentObject).filter(key => key !== lastSegment);
+
+        if (remainingKeys.length === 0) {
+          const grandparentPath = PathManager.getParent(parentPath);
+
+          if (grandparentPath.segments.length === 0) {
+            const parentKey = parentPath.segments[parentPath.segments.length - 1];
+            delete stateUpdate[parentKey];
+          } else {
+            const grandparentResult = PathManager.navigate(stateUpdate, grandparentPath);
+
+            if (grandparentResult.found && grandparentResult.parent && grandparentResult.key) {
+              const parentKey = parentPath.segments[parentPath.segments.length - 1];
+              delete grandparentResult.parent[parentKey];
+            } else if (
+              grandparentResult.found &&
+              grandparentResult.value &&
+              isPlainObject(grandparentResult.value)
+            ) {
+              const parentKey = parentPath.segments[parentPath.segments.length - 1];
+              const grandparentObj = grandparentResult.value as Record<string, unknown>;
+              delete grandparentObj[parentKey];
+            }
+          }
+        }
       }
     }
   }
@@ -394,7 +410,8 @@ export class PathManager {
     segment: string,
   ): boolean {
     return (
-      currentState != null &&
+      currentState !== null &&
+      currentState !== undefined &&
       typeof currentState[segment] === 'object' &&
       !Array.isArray(currentState[segment])
     );
@@ -461,6 +478,47 @@ export class PathManager {
   static isLeafPath(path: StatePath): boolean {
     return path.depth >= MAX_DEPTH;
   }
+
+  /**
+   * Recursively clean up empty objects from a state update
+   * Moved from multiplayer-orchestrator to centralize cleanup logic
+   * Preserves top-level properties as empty objects to maintain state structure
+   */
+  static cleanupEmptyObjects(
+    obj: Record<string, any>,
+    isTopLevel: boolean = true,
+  ): Record<string, any> {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      return obj;
+    }
+
+    const cleaned: Record<string, any> = {};
+    let hasNonEmptyValues = false;
+
+    for (const [key, value] of Object.entries(obj)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const cleanedValue = PathManager.cleanupEmptyObjects(value, false);
+
+        // For top-level properties, always preserve them even if empty
+        // For nested properties, only keep if they have content
+        if (isTopLevel || (cleanedValue && Object.keys(cleanedValue).length > 0)) {
+          cleaned[key] = cleanedValue;
+          if (!isTopLevel && Object.keys(cleanedValue).length > 0) {
+            hasNonEmptyValues = true;
+          } else if (isTopLevel) {
+            hasNonEmptyValues = true;
+          }
+        }
+      } else {
+        cleaned[key] = value;
+        hasNonEmptyValues = true;
+      }
+    }
+
+    // For top-level, always return the cleaned object (even if empty)
+    // For nested levels, only return if it has content
+    return isTopLevel || hasNonEmptyValues ? cleaned : {};
+  }
 }
 
 // ============================================================================
@@ -497,23 +555,4 @@ export function filterPathsByDepth(
   maxDepth: number = MAX_DEPTH,
 ): StatePath[] {
   return paths.filter(path => path.depth >= minDepth && path.depth <= maxDepth);
-}
-
-/**
- * Group paths by their root segment
- */
-export function groupPathsByRoot(paths: StatePath[]): Map<string, StatePath[]> {
-  const groups = new Map<string, StatePath[]>();
-
-  for (const path of paths) {
-    const root = PathManager.getRoot(path);
-    if (root) {
-      if (!groups.has(root)) {
-        groups.set(root, []);
-      }
-      groups.get(root)!.push(path);
-    }
-  }
-
-  return groups;
 }

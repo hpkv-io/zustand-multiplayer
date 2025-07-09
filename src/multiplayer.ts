@@ -13,8 +13,8 @@ import {
   type PathExtractable,
   ConfigurationError,
 } from './types/multiplayer-types';
-import { MULTIPLAYER_FIELD, ARROW_FUNCTION_INDICATOR, PATH_SEPARATOR } from './utils/constants';
-import { extractPaths, shouldStoreGranularly } from './utils/state-utils';
+import { ARROW_FUNCTION_INDICATOR } from './utils/constants';
+import { detectStateDeletions, detectStateChanges } from './utils/state-utils';
 
 // ============================================================================
 // TYPES
@@ -24,7 +24,7 @@ type Multiplayer = <
   T,
   Mps extends [StoreMutatorIdentifier, unknown][] = [],
   Mcs extends [StoreMutatorIdentifier, unknown][] = [],
-  U = T & { multiplayer: MultiplayerState<T> },
+  U = T & { multiplayer: MultiplayerState },
 >(
   initializer: ImmerStateCreator<T, [...Mps, ['zustand/multiplayer', unknown]], Mcs, T>,
   options: MultiplayerOptions<T>,
@@ -33,7 +33,7 @@ type Multiplayer = <
 type MultiplayerMiddleware = <TState>(
   config: ImmerStateCreator<TState, [], [], TState>,
   options: MultiplayerOptions<TState>,
-) => StateCreator<TState & { multiplayer: MultiplayerState<TState> }, [], []>;
+) => StateCreator<TState & { multiplayer: MultiplayerState }, [], []>;
 
 type StateUpdateFunction<TState> = (state: TState) => TState | Partial<TState>;
 type StateUpdateImmerFunction<TState> = (state: Draft<TState>) => void;
@@ -72,79 +72,8 @@ function validateAuthenticationOptions<TState>(options: MultiplayerOptions<TStat
 /**
  * Determines if a function is an arrow function by checking its string representation
  */
-function isArrowFunction(func: Function): boolean {
+function isArrowFunction(func: (...args: any[]) => any): boolean {
   return func.toString().includes(ARROW_FUNCTION_INDICATOR);
-}
-
-/**
- * Detects changes between old and new state
- */
-function detectStateChanges<TState>(oldState: TState, newState: TState): Partial<TState> {
-  const changes: Partial<TState> = {};
-
-  for (const key in newState) {
-    if (newState[key] !== oldState[key]) {
-      changes[key] = newState[key];
-    }
-  }
-
-  return changes;
-}
-
-/**
- * Calculates deletions for granular state storage
- */
-function calculateStateDeletions<TState>(
-  changes: Partial<TState>,
-  oldState: TState,
-): Array<{ path: string[] }> {
-  const deletions: Array<{ path: string[] }> = [];
-
-  for (const [field, newValue] of Object.entries(changes)) {
-    if (field === MULTIPLAYER_FIELD || typeof newValue === 'function') {
-      continue;
-    }
-
-    if (shouldStoreGranularly(newValue)) {
-      const oldFieldValue = (oldState as Record<string, unknown>)[field];
-
-      if (shouldStoreGranularly(oldFieldValue)) {
-        const deletedPaths = findDeletedPaths(oldFieldValue, newValue, field);
-        deletions.push(...deletedPaths);
-      }
-    }
-  }
-
-  return deletions;
-}
-
-/**
- * Finds paths that have been deleted between old and new values
- */
-function findDeletedPaths(
-  oldValue: Record<string, unknown>,
-  newValue: Record<string, unknown>,
-  fieldName: string,
-): Array<{ path: string[] }> {
-  const oldPaths = extractPaths({ [fieldName]: oldValue } as PathExtractable);
-  const newPaths = extractPaths({ [fieldName]: newValue } as PathExtractable);
-
-  const oldPathSet = new Set(oldPaths.map(p => p.path.join(PATH_SEPARATOR)));
-  const newPathSet = new Set(newPaths.map(p => p.path.join(PATH_SEPARATOR)));
-
-  const deletedPaths = Array.from(oldPathSet).filter(path => {
-    if (newPathSet.has(path)) {
-      return false;
-    }
-
-    // Check if this path is a parent of any new path
-    const pathPrefix = path + PATH_SEPARATOR;
-    return !Array.from(newPathSet).some(newPath => newPath.startsWith(pathPrefix));
-  });
-
-  return deletedPaths.map(deletedPath => ({
-    path: deletedPath.split(PATH_SEPARATOR),
-  }));
 }
 
 /**
@@ -160,7 +89,7 @@ function processImmerFunctionUpdate<TState>(
   const newState = produce(oldState, func);
 
   const changes = detectStateChanges(oldState, newState);
-  const deletions = calculateStateDeletions(changes, oldState);
+  const deletions = detectStateDeletions(oldState as PathExtractable, newState as PathExtractable);
 
   orchestrator.handleStateChangeRequest({ changes, deletions }, replace);
 }
@@ -175,8 +104,7 @@ function createDefaultSyncOptions<TState>(
   return {
     subscribeToUpdatesFor: () => nonFunctionKeys,
     publishUpdatesFor: () => nonFunctionKeys,
-    onConflict: conflicts => {
-      // Default conflict resolution strategy - will be logged by the conflict resolver
+    onConflict: _conflicts => {
       return { strategy: 'keep-remote' };
     },
     logLevel: LogLevel.INFO,
@@ -220,13 +148,11 @@ function setupWindowCleanup(orchestrator: MultiplayerOrchestrator<any>): () => v
     const cleanup = () => orchestrator.destroy();
     window.addEventListener('beforeunload', cleanup);
 
-    // Return a function to remove the event listener
     return () => {
       window.removeEventListener('beforeunload', cleanup);
     };
   }
 
-  // Return a no-op function for non-browser environments
   return () => {};
 }
 
@@ -245,7 +171,6 @@ async function initializeOrchestrator<TState>(
     logger.error('Store initialization failed', normalizedError, {
       operation: 'store-initialization',
     });
-    // Error is logged but doesn't prevent store creation
   }
 }
 
@@ -257,7 +182,7 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
   validateAuthenticationOptions(options);
 
   type TState = ReturnType<typeof config>;
-  type TStateWithMultiplayer = TState & { multiplayer: MultiplayerState<TState> };
+  type TStateWithMultiplayer = TState & { multiplayer: MultiplayerState };
 
   const originalSetState = api.setState;
   let orchestrator: MultiplayerOrchestrator<TState>;
@@ -270,7 +195,7 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
     replace?: boolean,
   ) => {
     if (typeof partial === 'function') {
-      const func = partial as Function;
+      const func = partial as StateUpdateFunction<TState> | StateUpdateImmerFunction<TState>;
 
       if (isArrowFunction(func)) {
         processImmerFunctionUpdate(
@@ -290,10 +215,8 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
     }
   };
 
-  // Override the API's setState
   api.setState = multiplayerSetState;
 
-  // Create extended API for the config function
   const extendedApi = {
     setState: multiplayerSetState,
     getState: () => get() as TState,
@@ -303,18 +226,15 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
   // Initialize the store
   const store = config(multiplayerSetState, () => get() as TState, extendedApi);
 
-  // Extract configuration from initial state
   const initialState = (get() || store) as Record<string, unknown>;
   const nonFunctionKeys = extractNonFunctionKeys<TState>(initialState);
   const syncOptions = createDefaultSyncOptions(options, nonFunctionKeys);
   const logger = createLogger(syncOptions.logLevel ?? LogLevel.INFO);
 
-  // Setup subscription patterns
   const subscribedFields = syncOptions.subscribeToUpdatesFor!();
   const subscribedKeysArray = createPathPatterns(subscribedFields);
   const publishedKeysArray = syncOptions.publishUpdatesFor!().map(key => String(key));
 
-  // Create storage client
   const hpkvStorageOptions: HPKVStorageOptions = {
     namespace: syncOptions.namespace,
     apiBaseUrl: syncOptions.apiBaseUrl,
@@ -331,8 +251,7 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
     logger,
   );
 
-  // Initialize orchestrator
-  const orchestratorApi = {
+  const apiWithOriginalSetState = {
     ...api,
     setState: originalSetState,
   };
@@ -340,12 +259,11 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
   orchestrator = new MultiplayerOrchestrator(
     client,
     syncOptions,
-    orchestratorApi as StoreApi<TState>,
+    apiWithOriginalSetState as StoreApi<TState>,
     store,
   );
 
-  // Create multiplayer state interface
-  const multiplayerState: MultiplayerState<TState> = {
+  const multiplayerState: MultiplayerState = {
     connectionState: ConnectionState.DISCONNECTED,
     hasHydrated: false,
     hydrate: () => orchestrator.hydrate(),
@@ -357,7 +275,6 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
     getMetrics: () => orchestrator.getMetrics(),
   };
 
-  // Combine store with multiplayer state
   const storeWithMultiplayer = {
     ...store,
     multiplayer: {
@@ -368,13 +285,8 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
     },
   } as TStateWithMultiplayer;
 
-  // Setup async initialization and cleanup
   initializeOrchestrator(orchestrator, logger);
-  const windowCleanup = setupWindowCleanup(orchestrator);
-
-  // Store the cleanup function for proper resource management
-  // Note: In a real implementation, this should be stored somewhere accessible
-  // for manual cleanup if needed before page unload
+  setupWindowCleanup(orchestrator);
 
   return storeWithMultiplayer;
 };

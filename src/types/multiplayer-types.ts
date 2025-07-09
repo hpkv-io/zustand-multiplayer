@@ -31,7 +31,7 @@ export interface MultiplayerOptions<TState> {
   clientConfig?: ConnectionConfig;
 }
 
-export interface MultiplayerState<TState> {
+export interface MultiplayerState {
   connectionState: ConnectionState;
   hasHydrated: boolean;
   hydrate: () => Promise<void>;
@@ -67,10 +67,6 @@ export type SetStateType<T> = T extends readonly [any, ...any[]]
   ? Exclude<T[0], (...args: any[]) => any>
   : never;
 
-// ============================================================================
-// Path and State Operation Types
-// ============================================================================
-
 /**
  * Represents a path to a nested property in an object
  */
@@ -91,69 +87,12 @@ export type SerializableValue =
   | SerializableValue[]
   | { [key: string]: SerializableValue };
 
-/**
- * Type for objects that can be safely processed for path extraction
- */
 export type PathExtractable = Record<string, SerializableValue>;
-
-/**
- * Type for state change operations including both changes and deletions
- */
-export interface StateChangeOperation<T> {
-  changes: Partial<T>;
-  deletions: PropertyPath[];
-}
-
-/**
- * Type for state update functions that can be passed to setState
- */
-export type StateUpdater<T> =
-  | T
-  | Partial<T>
-  | ((state: T) => T | Partial<T>)
-  | StateChangeOperation<T>;
-
-/**
- * Utility type to check if a value is a plain object (not array, not null, not function)
- */
-export type IsPlainObject<T> =
-  T extends Record<string, unknown>
-    ? T extends unknown[]
-      ? false
-      : T extends Function
-        ? false
-        : true
-    : false;
-
-/**
- * Type to extract nested keys from an object type
- */
-export type NestedKeyOf<T> =
-  T extends Record<string, infer U>
-    ? string | (U extends Record<string, unknown> ? `${string}.${NestedKeyOf<U>}` : never)
-    : never;
-
-/**
- * Type for conflict resolution strategies
- */
-export type ConflictStrategy = 'keep-local' | 'keep-remote' | 'merge' | 'manual';
-
-/**
- * Enhanced conflict resolution type with better typing
- */
-export interface TypedConflictResolution<T> {
-  strategy: ConflictStrategy;
-  manualResolution?: Partial<T>;
-}
-
-// ============================================================================
-// Enhanced State Creator Types
-// ============================================================================
 
 export type ImmerStateCreator<
   T,
-  Mis extends [StoreMutatorIdentifier, unknown][] = [],
-  Mos extends [StoreMutatorIdentifier, unknown][] = [],
+  _Mis extends [StoreMutatorIdentifier, unknown][] = [],
+  _Mos extends [StoreMutatorIdentifier, unknown][] = [],
   U = T,
 > = (
   setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void,
@@ -168,7 +107,7 @@ export type ImmerStateCreator<
 export type StoreWithImmerAndMultiplayer<S> = S extends { setState: infer SetState }
   ? SetState extends {
       (...args: infer A1): infer Sr1;
-      (...args: infer A2): infer Sr2;
+      (...args: infer _A2): infer Sr2;
     }
     ? {
         setState(
@@ -190,10 +129,10 @@ export type StoreWithImmerAndMultiplayer<S> = S extends { setState: infer SetSta
 
 export type WithMultiplayerMiddleware<S, _A> = Write<
   S,
-  StoreWithImmerAndMultiplayer<S> & { multiplayer: MultiplayerState<S> }
+  StoreWithImmerAndMultiplayer<S> & { multiplayer: MultiplayerState }
 >;
 
-export type WithMultiplayer<S> = S & { multiplayer: MultiplayerState<S> };
+export type WithMultiplayer<S> = S & { multiplayer: MultiplayerState };
 
 // Module declaration for Zustand
 declare module 'zustand/vanilla' {
@@ -300,41 +239,7 @@ export class AuthenticationError extends MultiplayerError {
 }
 
 /**
- * Network and connectivity errors
- */
-export class NetworkError extends MultiplayerError {
-  constructor(message: string, context?: ErrorContext, recoverable: boolean = true) {
-    super(
-      message,
-      'NETWORK_ERROR',
-      recoverable,
-      context,
-      ErrorSeverity.MEDIUM,
-      ErrorCategory.NETWORK,
-    );
-    this.name = 'NetworkError';
-  }
-}
-
-/**
- * Storage-related errors
- */
-export class StorageError extends MultiplayerError {
-  constructor(message: string, context?: ErrorContext, recoverable: boolean = true) {
-    super(
-      message,
-      'STORAGE_ERROR',
-      recoverable,
-      context,
-      ErrorSeverity.MEDIUM,
-      ErrorCategory.STORAGE,
-    );
-    this.name = 'StorageError';
-  }
-}
-
-/**
- * Configuration and validation errors
+ * Configuration errors
  */
 export class ConfigurationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
@@ -357,22 +262,5 @@ export class HydrationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
     super(message, 'HYDRATION_ERROR', true, context, ErrorSeverity.HIGH, ErrorCategory.HYDRATION);
     this.name = 'HydrationError';
-  }
-}
-
-/**
- * Validation errors for input data
- */
-export class ValidationError extends MultiplayerError {
-  constructor(message: string, context?: ErrorContext) {
-    super(
-      message,
-      'VALIDATION_ERROR',
-      false,
-      context,
-      ErrorSeverity.MEDIUM,
-      ErrorCategory.VALIDATION,
-    );
-    this.name = 'ValidationError';
   }
 }

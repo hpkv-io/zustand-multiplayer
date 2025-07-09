@@ -105,10 +105,7 @@ export class MultiplayerOrchestrator<TState> {
   private async handleRemoteChange(event: HPKVChangeEvent): Promise<void> {
     const parsed = this.keyManager.parseStorageKey(event.key);
     const currentState = this.api.getState() as Record<string, any>;
-    this.logger.debug('Received remote change', {
-      operation: 'remote-change',
-      clientId: this.client.getClientId(),
-    });
+
     if (event.value === null) {
       await this.handleRemoteDeletion(parsed, currentState);
     } else {
@@ -120,12 +117,24 @@ export class MultiplayerOrchestrator<TState> {
     parsed: { path: string[] },
     currentState: Record<string, any>,
   ): Promise<void> {
-    const stateUpdate = this.buildDeletionStateUpdate(parsed, currentState);
-    this.logger.debug(`Applying remote deletion. new state: ${JSON.stringify(stateUpdate)}`, {
-      operation: 'remote-deletion',
-      clientId: this.client.getClientId(),
-    });
-    await this.applyStateChange(stateUpdate as Partial<TState>, false, true);
+    const statePath = fromLegacyPath(parsed.path);
+    const deletionUpdate = PathManager.buildDeleteUpdate(
+      statePath,
+      currentState,
+      this.initialState as Record<string, unknown>,
+    );
+
+    // Apply the deletion first
+    await this.applyStateChange(deletionUpdate as Partial<TState>, false, true);
+
+    // Then clean up any empty parent objects in the full state
+    const currentFullState = this.api.getState();
+    const cleanedState = PathManager.cleanupEmptyObjects(currentFullState as Record<string, any>);
+
+    // Only apply if cleanup actually changed something
+    if (JSON.stringify(cleanedState) !== JSON.stringify(currentFullState)) {
+      await this.applyStateChange(cleanedState as Partial<TState>, true, true);
+    }
   }
 
   private async handleRemoteUpdate(
@@ -142,11 +151,14 @@ export class MultiplayerOrchestrator<TState> {
     currentState: Record<string, any>,
   ): Record<string, any> {
     const statePath = fromLegacyPath(parsed.path);
-    return PathManager.buildDeleteUpdate(
+    const deletionUpdate = PathManager.buildDeleteUpdate(
       statePath,
       currentState,
       this.initialState as Record<string, unknown>,
     );
+
+    // Clean up any empty parent objects that may have been left behind
+    return PathManager.cleanupEmptyObjects(deletionUpdate);
   }
 
   private buildUpdateStateUpdate(
@@ -374,6 +386,10 @@ export class MultiplayerOrchestrator<TState> {
 
   private createDeletionPromises(deletions: Array<{ path: string[] }>): Promise<void>[] {
     return deletions.map(async deletion => {
+      this.logger.debug(`Deleting item from storage. path: ${deletion.path}`, {
+        operation: 'deletion',
+        clientId: this.client.getClientId(),
+      });
       const storageKey = this.keyManager.createStorageKey(deletion.path);
       return await this.client.removeItem(storageKey);
     });
@@ -442,9 +458,9 @@ export class MultiplayerOrchestrator<TState> {
   // UTILITY METHODS
   // ============================================================================
 
-  private updateMultiplayerState(updates: Partial<MultiplayerState<TState>>): void {
+  private updateMultiplayerState(updates: Partial<MultiplayerState>): void {
     this.api.setState(state => {
-      const stateWithMultiplayer = state as TState & { multiplayer: MultiplayerState<TState> };
+      const stateWithMultiplayer = state as TState & { multiplayer: MultiplayerState };
       return {
         ...state,
         multiplayer: { ...stateWithMultiplayer.multiplayer, ...updates },

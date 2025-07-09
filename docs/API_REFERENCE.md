@@ -15,6 +15,7 @@ Complete reference for the Zustand Multiplayer Middleware.
 - [Token Helper API](#token-helper-api)
 - [Error Types](#error-types)
 - [Performance Monitoring](#performance-monitoring)
+- [Utility Functions](#utility-functions)
 
 ## Exports
 
@@ -22,16 +23,25 @@ The main package exports the following:
 
 ```typescript
 // Core multiplayer functionality
-export { multiplayer, MultiplayerOptions, WithMultiplayer } from './multiplayer';
+export { multiplayer } from './multiplayer';
+export type {
+  MultiplayerOptions,
+  WithMultiplayer,
+  MultiplayerState,
+} from './types/multiplayer-types';
 
 // Token generation utilities
-export { TokenHelper, TokenRequest, TokenResponse } from './token-helper';
+export { TokenHelper, TokenRequest, TokenResponse } from './auth/token-helper';
 
 // Storage interface
-export { HPKVStorage } from './hpkvStorage';
+export { HPKVStorage } from './storage/hpkv-storage';
+export { StorageKeyManager } from './storage/storage-key-manager';
 
 // Logging utilities
-export * from './logger';
+export * from './monitoring/logger';
+
+// Utility functions
+export * from './utils';
 ```
 
 ## Types
@@ -118,6 +128,27 @@ interface PerformanceMetrics {
   averageHydrationTime: number;
   averageSyncTime: number;
 }
+```
+
+#### `ImmerStateCreator<T>`
+
+Enhanced state creator that supports Immer-style mutations:
+
+```typescript
+type ImmerStateCreator<
+  T,
+  Mis extends [StoreMutatorIdentifier, unknown][] = [],
+  Mos extends [StoreMutatorIdentifier, unknown][] = [],
+  U = T,
+> = (
+  setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void,
+  getState: () => T,
+  store: {
+    setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void;
+    getState: () => T;
+    subscribe: (listener: (state: T, prevState: T) => void) => () => void;
+  },
+) => U;
 ```
 
 ### Configuration Types
@@ -213,8 +244,10 @@ Request format for token generation endpoints:
 
 ```typescript
 interface TokenRequest {
+  /** Store name to generate token for */
   namespace: string;
-  subscribedKeys: string[];
+  /** Keys and patterns to subscribe to */
+  subscribedKeysAndPatterns: string[];
 }
 ```
 
@@ -224,29 +257,54 @@ Response format from token generation endpoints:
 
 ```typescript
 interface TokenResponse {
+  /** The namespace the token is for */
   namespace: string;
+  /** The generated WebSocket token */
   token: string;
 }
+```
+
+#### `SerializableValue`
+
+Type for values that can be safely serialized and stored:
+
+```typescript
+type SerializableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SerializableValue[]
+  | { [key: string]: SerializableValue };
+```
+
+#### `PathExtractable`
+
+Type constraint for state that can have paths extracted:
+
+```typescript
+type PathExtractable = Record<string, SerializableValue>;
 ```
 
 ## Functions
 
 ### `multiplayer(initializer, options)`
 
-The main middleware function that wraps your Zustand state creator.
+The main middleware function that wraps your Zustand state creator with Immer support.
 
 **Signature:**
 
 ```typescript
 function multiplayer<T>(
-  initializer: StateCreator<T, [], []>,
+  initializer: ImmerStateCreator<T, [], [], T>,
   options: MultiplayerOptions<T>,
 ): StateCreator<T & { multiplayer: MultiplayerState }, [], []>;
 ```
 
 **Parameters:**
 
-- `initializer`: Your standard Zustand state creator function
+- `initializer`: Your Zustand state creator function with Immer support
 - `options`: Configuration object (see [Configuration Options](#configuration-options))
 
 **Returns:** A Zustand-compatible state creator with multiplayer functionality
@@ -258,7 +316,17 @@ const useStore = create<WithMultiplayer<MyState>>()(
   multiplayer(
     (set, get) => ({
       count: 0,
-      increment: () => set(state => ({ count: state.count + 1 })),
+      todos: {},
+      // Immer-style updates with arrow functions
+      increment: () =>
+        set(state => {
+          state.count += 1;
+        }),
+      addTodo: (text: string) =>
+        set(state => {
+          const id = Date.now().toString();
+          state.todos[id] = { id, text, completed: false };
+        }),
     }),
     {
       namespace: 'my-app',
@@ -267,6 +335,30 @@ const useStore = create<WithMultiplayer<MyState>>()(
     },
   ),
 );
+```
+
+**State Update Types:**
+
+The multiplayer middleware supports multiple state update patterns:
+
+```typescript
+// Direct state object
+set({ count: 5 });
+
+// Partial state update
+set(state => ({ count: state.count + 1 }));
+
+// Immer-style mutations (arrow functions)
+set(state => {
+  state.count += 1;
+  state.todos[id] = newTodo;
+});
+
+// Changes and deletions format
+set({
+  changes: { count: 5 },
+  deletions: [{ path: ['todos', 'old-id'] }],
+});
 ```
 
 ## Multiplayer State API
@@ -586,18 +678,23 @@ new TokenHelper(apiKey: string, baseUrl: string)
 
 #### Methods
 
-##### `generateTokenForStore(namespace: string, subscribedKeys: string[]): Promise<string>`
+##### `generateTokenForStore(namespace: string, subscribedKeysAndPatterns: string[]): Promise<string>`
 
 Generates a WebSocket token for a specific namespace.
 
 ```typescript
 const tokenHelper = new TokenHelper(apiKey, baseUrl);
-const token = await tokenHelper.generateTokenForStore('my-app', ['my-app:todos']);
+const token = await tokenHelper.generateTokenForStore('my-app', ['my-app:todos', 'my-app:*']);
 ```
+
+**Parameters:**
+
+- `namespace`: The store namespace
+- `subscribedKeysAndPatterns`: Array of keys and patterns to subscribe to (supports wildcards with `*`)
 
 ##### `processTokenRequest(requestData: unknown): Promise<TokenResponse>`
 
-Processes a token request and returns a structured response.
+Processes a token request and returns a structured response. Accepts both string and object formats.
 
 ```typescript
 const response = await tokenHelper.processTokenRequest(req.body);
@@ -623,12 +720,16 @@ fastify.post('/api/token', tokenHelper.createFastifyHandler());
 
 ```typescript
 interface TokenRequest {
+  /** Store name to generate token for */
   namespace: string;
-  subscribedKeys: string[];
+  /** Keys and patterns to subscribe to */
+  subscribedKeysAndPatterns: string[];
 }
 
 interface TokenResponse {
+  /** The namespace the token is for */
   namespace: string;
+  /** The generated WebSocket token */
   token: string;
 }
 ```
@@ -637,36 +738,90 @@ interface TokenResponse {
 
 ### `MultiplayerError`
 
-Base error class for multiplayer-related errors.
+Base error class for multiplayer-related errors with enhanced categorization.
 
 ```typescript
 class MultiplayerError extends Error {
+  public readonly timestamp: number;
+  public readonly severity: ErrorSeverity;
+  public readonly category: ErrorCategory;
+
   constructor(
     message: string,
     public readonly code: string,
     public readonly recoverable: boolean = true,
-    public readonly context?: Record<string, unknown>
+    public readonly context?: ErrorContext,
+    severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+    category: ErrorCategory = ErrorCategory.STATE_MANAGEMENT,
   )
+
+  toSerializable(): Record<string, unknown>;
 }
 ```
 
-### `HydrationError`
+### Error Severity Levels
 
-Specific error for hydration failures.
+```typescript
+enum ErrorSeverity {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical',
+}
+```
+
+### Error Categories
+
+```typescript
+enum ErrorCategory {
+  AUTHENTICATION = 'authentication',
+  NETWORK = 'network',
+  STORAGE = 'storage',
+  HYDRATION = 'hydration',
+  CONFLICT_RESOLUTION = 'conflict_resolution',
+  STATE_MANAGEMENT = 'state_management',
+  CONFIGURATION = 'configuration',
+  VALIDATION = 'validation',
+}
+```
+
+### Specific Error Types
+
+#### `AuthenticationError`
+
+```typescript
+class AuthenticationError extends MultiplayerError {
+  constructor(message: string, context?: ErrorContext);
+}
+```
+
+#### `ConfigurationError`
+
+```typescript
+class ConfigurationError extends MultiplayerError {
+  constructor(message: string, context?: ErrorContext);
+}
+```
+
+#### `HydrationError`
 
 ```typescript
 class HydrationError extends MultiplayerError {
-  constructor(message: string, context?: Record<string, unknown>);
+  constructor(message: string, context?: ErrorContext);
 }
 ```
 
-**Common error codes:**
+### Error Context
 
-- `CONNECTION_FAILED`: WebSocket connection failed
-- `AUTHENTICATION_FAILED`: Token generation/validation failed
-- `HYDRATION_ERROR`: State hydration failed
-- `SYNC_ERROR`: State synchronization failed
-- `MISSING_AUTHENTICATION_CONFIG`: No apiKey or tokenGenerationUrl provided
+```typescript
+interface ErrorContext {
+  timestamp?: number;
+  operation?: string;
+  clientId?: string;
+  namespace?: string;
+  [key: string]: unknown;
+}
+```
 
 ## Performance Monitoring
 
@@ -714,11 +869,10 @@ Connection states are imported from `@hpkv/websocket-client`:
 
 ```typescript
 enum ConnectionState {
-  DISCONNECTED = 'disconnected',
-  CONNECTING = 'connecting',
-  CONNECTED = 'connected',
-  RECONNECTING = 'reconnecting',
-  FAILED = 'failed',
+  DISCONNECTED = 'DISCONNECTED',
+  CONNECTING = 'CONNECTING',
+  CONNECTED = 'CONNECTED',
+  RECONNECTING = 'RECONNECTING',
 }
 ```
 
@@ -729,7 +883,11 @@ interface ConnectionStats {
   connectionState: ConnectionState;
   isConnected: boolean;
   reconnectAttempts: number;
-  lastError?: string;
+  messagesPending: number;
+  throttling?: {
+    currentRate: number;
+    queueLength: number;
+  };
 }
 ```
 
@@ -739,11 +897,11 @@ interface ConnectionStats {
 
 ```typescript
 enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
+  DEBUG = 4,
+  INFO = 3,
   WARN = 2,
-  ERROR = 3,
-  NONE = 4,
+  ERROR = 1,
+  NONE = 0,
 }
 ```
 
@@ -769,6 +927,22 @@ const useStore = create<WithMultiplayer<MyState>>()(multiplayer(/* ... */));
 
 // ❌ Incorrect
 const useStore = create<MyState>()(multiplayer(/* ... */));
+```
+
+### Immer-Style Updates
+
+Use arrow functions for Immer-style mutations:
+
+```typescript
+// ✅ Immer-style (arrow function)
+set(state => {
+  state.todos[id] = newTodo;
+});
+
+// ✅ Traditional functional update
+set(state => ({
+  todos: { ...state.todos, [id]: newTodo },
+}));
 ```
 
 ### Error Handling
@@ -797,5 +971,5 @@ try {
 
 1. **Never expose API keys** in client code
 2. **Validate tokens** in your backend
-3. **Use HTTPS** for token endpoints
+3. **Implement authentication/authrization** for token endpoints
 4. **Implement rate limiting** on token generation

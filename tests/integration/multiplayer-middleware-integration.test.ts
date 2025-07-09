@@ -4,10 +4,10 @@ import {
   WithMultiplayer,
   ImmerStateCreator,
   WithMultiplayerMiddleware,
-} from '../src/types/multiplayer-types';
-import { LogLevel } from '../src/monitoring/logger';
-import { createUniqueStoreName, waitFor, createTestServer } from './utils/test-utils';
-import { StoreCreator } from './utils/store-creator';
+} from '../../src/types/multiplayer-types';
+import { LogLevel } from '../../src/monitoring/logger';
+import { createUniqueStoreName, waitFor, createTestServer } from '../utils/test-utils';
+import { StoreCreator } from '../utils/store-creator';
 import { StoreApi, UseBoundStore } from 'zustand';
 import { ConnectionState } from '@hpkv/websocket-client';
 
@@ -18,13 +18,13 @@ type TestState = {
   nested: {
     value: number;
   };
-  items: Record<string, string>;
+  todos: Record<string, { id: string; text: string; completed: boolean }>;
   increment: () => void;
   decrement: () => void;
   setText: (text: string) => void;
   updateNested: (value: number) => void;
-  addItem: (item: string) => void;
-  removeItem: (item: string) => void;
+  addTodo: (todo: { id: string; text: string; completed: boolean }) => void;
+  removeTodo: (id: string) => void;
 };
 
 // Create type for our test store with multiplayer
@@ -36,7 +36,7 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
   count: 0,
   text: '',
   nested: { value: 0 },
-  items: {},
+  todos: {},
   increment: () =>
     set(state => {
       state.count++;
@@ -47,18 +47,17 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
     }),
   setText: (text: string) => set({ text }),
   updateNested: (value: number) => set({ nested: { value } }),
-  addItem: (item: string) =>
+  addTodo: (todo: { id: string; text: string; completed: boolean }) =>
     set(state => {
-      state.items[item] = item;
+      state.todos[todo.id] = todo;
     }),
-  removeItem: (item: string) =>
+  removeTodo: (item: string) =>
     set(state => {
-      delete state.items[item];
+      delete state.todos[item];
     }),
 });
 
 describe('Multiplayer Middleware Integration Tests', () => {
-  // Skip tests if environment variables are not set
   const skip = !process.env.HPKV_API_KEY || !process.env.HPKV_API_BASE_URL;
 
   const storeCreator = new StoreCreator();
@@ -123,8 +122,8 @@ describe('Multiplayer Middleware Integration Tests', () => {
     store1.getState().increment();
     store1.getState().setText('Persistence Test');
     store1.getState().updateNested(99);
-    store1.getState().addItem('item1');
-    store1.getState().addItem('item2');
+    store1.getState().addTodo({ id: '1', text: 'item1', completed: false });
+    store1.getState().addTodo({ id: '2', text: 'item2', completed: false });
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -138,7 +137,10 @@ describe('Multiplayer Middleware Integration Tests', () => {
       expect(store2.getState().count).toBe(1);
       expect(store2.getState().text).toBe('Persistence Test');
       expect(store2.getState().nested.value).toBe(99);
-      expect(store2.getState().items).toEqual({ item1: 'item1', item2: 'item2' });
+      expect(store2.getState().todos).toEqual({
+        '1': { id: '1', text: 'item1', completed: false },
+        '2': { id: '2', text: 'item2', completed: false },
+      });
     });
   });
 
@@ -155,7 +157,6 @@ describe('Multiplayer Middleware Integration Tests', () => {
         expect(store1.getState().multiplayer.hasHydrated).toBe(true);
         expect(store2.getState().multiplayer.hasHydrated).toBe(true);
       });
-
 
       await store2.getState().multiplayer.disconnect();
 
@@ -229,9 +230,7 @@ describe('Multiplayer Middleware Integration Tests', () => {
       expect(store1.getState().multiplayer.hasHydrated).toBe(true);
       expect(store2.getState().multiplayer.hasHydrated).toBe(true);
     });
-    await waitFor(() => {
-
-    });
+    await waitFor(() => {});
 
     store1.getState().setText('store 1 update');
     store1.getState().increment();
@@ -283,17 +282,22 @@ describe('Multiplayer Middleware Integration Tests', () => {
       expect(store2.getState().multiplayer.hasHydrated).toBe(true);
     });
 
-    store1.getState().addItem('item1');
-    store1.getState().addItem('item2');
+    store1.getState().addTodo({ id: '1', text: 'item1', completed: false });
+    store1.getState().addTodo({ id: '2', text: 'item2', completed: false });
 
     await waitFor(() => {
-      expect(store2.getState().items).toEqual({ item1: 'item1', item2: 'item2' });
+      expect(store2.getState().todos).toEqual({
+        '1': { id: '1', text: 'item1', completed: false },
+        '2': { id: '2', text: 'item2', completed: false },
+      });
     });
 
-    store1.getState().removeItem('item1');
+    store1.getState().removeTodo('1');
 
     await waitFor(() => {
-      expect(store2.getState().items).toEqual({ item2: 'item2' });
+      expect(store2.getState().todos).toEqual({
+        '2': { id: '2', text: 'item2', completed: false },
+      });
     });
   });
 

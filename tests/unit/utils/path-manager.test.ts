@@ -251,7 +251,7 @@ describe('PathManager', () => {
       const nonLeafPath = PathManager.createPath(['user']);
 
       // The implementation may consider all paths as leaf paths by default
-      expect(PathManager.isLeafPath(leafPath)).toBe(false);
+      expect(PathManager.isLeafPath(leafPath)).toBe(true);
       expect(PathManager.isLeafPath(nonLeafPath)).toBe(false);
     });
   });

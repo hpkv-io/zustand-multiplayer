@@ -1,5 +1,4 @@
 import { getCacheManager } from '../utils/cache-manager';
-import { createMemoizedStorageKey } from '../utils/memoization';
 
 /**
  * Generic storage item interface
@@ -27,10 +26,8 @@ export interface NamespaceRange {
 
 /**
  * Manages storage keys and key mappings for the multiplayer system.
- * Enhanced with caching for better performance.
  */
 export class StorageKeyManager {
-  // Cache for storage key operations
   private cacheManager = getCacheManager();
 
   constructor(private namespace: string) {}
@@ -44,16 +41,13 @@ export class StorageKeyManager {
     const pathKey = path.join(':');
     const cacheKey = `${this.namespace}:${pathKey}`;
 
-    // Check cache first
     const cached = this.cacheManager.storageKeyCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
     }
 
-    // Create the key
     const result = `${this.namespace}:${pathKey}`;
 
-    // Cache the result
     this.cacheManager.storageKeyCache.set(cacheKey, result);
 
     return result;
@@ -68,7 +62,6 @@ export class StorageKeyManager {
     const prefix = `${this.namespace}:`;
     let keyToParse = storageKey;
 
-    // Remove namespace prefix if present
     if (storageKey.startsWith(prefix)) {
       keyToParse = storageKey.substring(prefix.length);
     }
@@ -148,8 +141,6 @@ export class StorageKeyManager {
       const keyParts = item.key.split(':');
       const rootKey = keyParts[0];
 
-      // Check if the root key is in publishedKeys (for granular nested fields)
-      // or if the entire key is in publishedKeys (for top-level fields)
       return publishedKeys.includes(rootKey) || publishedKeys.includes(item.key);
     });
   }
@@ -178,12 +169,5 @@ export class StorageKeyManager {
    */
   clearCache(): void {
     this.cacheManager.storageKeyCache.clear();
-  }
-
-  /**
-   * Get cache statistics
-   */
-  getCacheStats() {
-    return this.cacheManager.storageKeyCache.getStats();
   }
 }

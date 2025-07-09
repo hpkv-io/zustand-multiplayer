@@ -30,14 +30,13 @@ export class StoreCreator {
     return store;
   }
 
-  async cleanupStore<T>(store: UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState<T> }>>) {
+  async cleanupStore<T>(store: UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState }>>) {
     const state = store.getState();
     try {
       await state.multiplayer.clearStorage();
       await state.multiplayer.destroy();
     } catch (error) {
-      // Ignore cleanup errors - they're expected in some test scenarios
-      console.warn('Store cleanup failed (expected in mock scenarios):', error.message);
+      // Ignore cleanup errors - they're expected in some test scenarios      console.warn('Store cleanup failed (expected in mock scenarios):', error.message);
     }
     await state.multiplayer.disconnect();
   }

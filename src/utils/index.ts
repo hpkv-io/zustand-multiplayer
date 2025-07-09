@@ -103,8 +103,6 @@ export function createDelay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-
-
 /**
  * Safely clears a timeout
  * @param timeoutId The timeout ID to clear
@@ -133,7 +131,18 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-
+/**
+ * Type guard to check if a value is a primitive
+ */
+export function isPrimitive(value: unknown): value is string | number | boolean | null | undefined {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  );
+}
 
 /**
  * Creates a generic handler function for framework-specific token handlers

@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../src/types/multiplayer-types';
-import { createUniqueStoreName, waitFor } from './utils/test-utils';
+import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
+import { createUniqueStoreName, waitFor } from '../utils/test-utils';
 import {
   ConnectionState,
   MockHPKVClientFactory,
   MockTokenHelper,
   MockWebsocketTokenManager,
-} from './mocks';
+} from '../mocks';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -21,13 +21,13 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/auth/token-helper', () => {
+vi.doMock('../../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
 });
 
-const { StoreCreator } = await import('./utils/store-creator');
+const { StoreCreator } = await import('../utils/store-creator');
 
 type TestState = {
   count: number;

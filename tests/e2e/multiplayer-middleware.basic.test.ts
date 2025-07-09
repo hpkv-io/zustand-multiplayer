@@ -3,16 +3,16 @@ import {
   ImmerStateCreator,
   MultiplayerOptions,
   WithMultiplayer,
-} from '../src/types/multiplayer-types';
+} from '../../src/types/multiplayer-types';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { createUniqueStoreName, waitFor } from './utils/test-utils';
+import { createUniqueStoreName, waitFor } from '../utils/test-utils';
 import {
   ConnectionState,
   MockHPKVClientFactory,
   MockTokenHelper,
   MockWebsocketTokenManager,
-} from './mocks';
+} from '../mocks';
 import { HPKVGetResponse } from '@hpkv/websocket-client';
 
 vi.doMock('@hpkv/websocket-client', () => {
@@ -28,13 +28,13 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/auth/token-helper', () => {
+vi.doMock('../../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
 });
-const multiplayerModule = await import('../src/multiplayer');
-const { StoreCreator } = await import('./utils/store-creator');
+const multiplayerModule = await import('../../src/multiplayer');
+const { StoreCreator } = await import('../utils/store-creator');
 const { multiplayer } = multiplayerModule;
 
 type TestState = {

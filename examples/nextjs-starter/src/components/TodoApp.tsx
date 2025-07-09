@@ -10,7 +10,7 @@ const TodoApp: React.FC = () => {
 
   return (
     <div className={styles['todo-app']}>
-      <h1 className={styles['page-title']}>Collaborative ToDo App</h1>
+      <h1 className={styles['page-title']}>Collaborative ToDo List App</h1>
       <ConnectionStatus />
 
       <div className={styles['todo-card']}>

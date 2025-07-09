@@ -523,10 +523,6 @@ class HPKVStorageImpl implements HPKVStorage {
         throw new Error(`Failed to get token: ${response.status} ${response.statusText}`);
       }
       const data = (await response.json()) as TokenResponse;
-      this.logger.debug(`Fetched token: ${data.token}`, {
-        operation: 'fetchToken',
-        clientId: this.clientId,
-      });
       return data.token;
     }, 'fetchToken');
   }
@@ -602,18 +598,37 @@ class HPKVStorageImpl implements HPKVStorage {
       await this.ensureConnection();
       return this.retryManager.executeWithRetry(async () => {
         const range = this.keyManager.getNamespaceRange();
-        const allItems = await this.client?.range(range.start, range.end);
+        let allRecords: any[] = [];
+        let currentStart = range.start;
+        let hasMore = true;
 
-        if (!allItems) {
-          return new Map();
+        // Keep fetching until all keys are retrieved
+        while (hasMore) {
+          const batchResult = await this.client?.range(currentStart, range.end, { limit: 500 });
+
+          if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          allRecords = allRecords.concat(batchResult.records);
+
+          // Check if there are more results
+          if (batchResult.truncated) {
+            // Use the last key from this batch as the starting point for the next call
+            // We need to increment beyond the last key to avoid duplicates
+            const lastKey = batchResult.records[batchResult.records.length - 1].key;
+            currentStart = lastKey + '\0'; // Add null character to get the next key
+          } else {
+            hasMore = false;
+          }
         }
 
-        const normalizedItems = allItems.records.map(item => ({
+        const normalizedItems = allRecords.map(item => ({
           key: this.keyManager.getKeyWithoutPrefix(item.key),
           value: JSON.parse(item.value) as StoredValue,
         }));
 
-        // Filter items based on published keys permissions
         const filteredItems = this.keyManager.filterItemsByPublishedKeys(
           normalizedItems,
           this.publishedKeys,
@@ -646,7 +661,10 @@ class HPKVStorageImpl implements HPKVStorage {
         timestamp: getCurrentTimestamp(),
       };
       const stringValue = JSON.stringify(valueToStore);
-
+      this.logger.debug(`Setting item: ${fullKey}`, {
+        operation: 'setItem',
+        clientId: this.clientId,
+      });
       await this.client?.set(fullKey, stringValue, true).catch(error => {
         this.logger.error('Failed to set item', normalizeError(error), {
           operation: 'setItem',
@@ -676,11 +694,29 @@ class HPKVStorageImpl implements HPKVStorage {
     const operation = async (): Promise<void> => {
       await this.ensureConnection();
       const range = this.keyManager.getNamespaceRange();
-      const result = await this.client?.range(range.start, range.end);
-      for (const item of result?.records ?? []) {
-        await this.retryManager.executeWithRetry(async () => {
-          await this.client?.delete(item.key);
-        }, `clear-${item.key}`);
+      let currentStart = range.start;
+      let hasMore = true;
+
+      while (hasMore) {
+        const batchResult = await this.client?.range(currentStart, range.end, { limit: 500 });
+
+        if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        for (const item of batchResult.records) {
+          await this.retryManager.executeWithRetry(async () => {
+            await this.client?.delete(item.key);
+          }, `clear-${item.key}`);
+        }
+
+        if (batchResult.truncated) {
+          const lastKey = batchResult.records[batchResult.records.length - 1].key;
+          currentStart = lastKey + '\0';
+        } else {
+          hasMore = false;
+        }
       }
     };
 

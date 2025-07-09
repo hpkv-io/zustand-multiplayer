@@ -3,25 +3,11 @@ import { PerformanceMonitor } from '../monitoring/profiler';
 import { HPKVStorage } from '../storage/hpkv-storage';
 import { StorageKeyManager } from '../storage/storage-key-manager';
 import { HydrationError } from '../types/multiplayer-types';
-import { normalizeError, getCurrentTimestamp, isPlainObject } from '../utils';
+import { normalizeError, getCurrentTimestamp } from '../utils';
 import { createMemoizedStateReconstruction } from '../utils/memoization';
 import { PathManager, fromLegacyPath } from '../utils/path-manager';
 
-// ============================================================================
-// TYPE DEFINITIONS
-// ============================================================================
-
-/**
- * Type for state during reconstruction
- */
 type StateReconstruction = Record<string, unknown>;
-
-/**
- * Type guard to check if a value is a valid state object
- */
-function isValidStateObject(value: unknown): value is StateReconstruction {
-  return isPlainObject(value);
-}
 
 /**
  * Safely merges nested paths into a state object using PathManager
@@ -40,7 +26,6 @@ export class StateHydrator<TState> {
   private hydrationPromise: Promise<void> | null = null;
   private hasHydrated = false;
 
-  // Memoized state reconstruction for better performance
   private memoizedStateReconstruction: (items: Map<string, unknown>) => Partial<TState>;
 
   constructor(

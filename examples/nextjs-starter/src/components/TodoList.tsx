@@ -24,12 +24,12 @@ const TodoList: React.FC<TodoListProps> = ({ filter }) => {
     <ul className={styles['todo-list']}>
       {filteredTodos.map(todo => (
         <li
-          key={todo.id}
+          key={todo.id ?? Date.now().toString()}
           className={`${styles['todo-item']} ${todo.completed ? styles['completed'] : ''}`}
         >
           <input
             type="checkbox"
-            checked={todo.completed}
+            checked={!!todo.completed}
             onChange={() => toggleTodo(todo.id)}
             className={styles['todo-checkbox']}
           />
