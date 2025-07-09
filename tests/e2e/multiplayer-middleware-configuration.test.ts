@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, afterAll, beforeEach, afterEach } from 'vitest';
-import { MultiplayerOptions } from '../src/multiplayer';
-import { LogLevel } from '../src/logger';
-import { createUniqueStoreName, waitFor } from './utils/test-utils';
+import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
+import { LogLevel } from '../../src/monitoring/logger';
+import { createUniqueStoreName, waitFor } from '../utils/test-utils';
 
-import { StateCreator } from 'zustand';
-import { MockHPKVClientFactory } from './mocks/mock-hpkv-client';
-import { MockWebsocketTokenManager } from './mocks/mock-token-manager';
-import { MockTokenHelper } from './mocks/mock-token-manager';
+import { MockHPKVClientFactory } from '../mocks/mock-hpkv-client';
+import { MockWebsocketTokenManager } from '../mocks/mock-token-manager';
+import { MockTokenHelper } from '../mocks/mock-token-manager';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -21,13 +20,13 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/token-helper', () => {
+vi.doMock('../../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
 });
 
-const { StoreCreator } = await import('./utils/store-creator');
+const { StoreCreator } = await import('../utils/store-creator');
 
 // Test state for configuration testing
 type TestState = {
@@ -43,7 +42,7 @@ type TestState = {
   updateLanguage: (language: string) => void;
 };
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   settings: {

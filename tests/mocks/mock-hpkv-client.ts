@@ -49,12 +49,57 @@ function matchesAccessPattern(key: string, pattern?: string): boolean {
   }
 }
 
+// Helper to check if a key matches any subscription pattern
+function matchesSubscriptionPattern(key: string, subscribeKeys: string[]): boolean {
+  return subscribeKeys.some(pattern => {
+    // Exact match - this should handle most existing tests
+    if (pattern === key) {
+      return true;
+    }
+
+    // Pattern matching for wildcard subscriptions
+    if (pattern.includes('*')) {
+      // Simple wildcard matching
+      // Convert "namespace:*" to match "namespace:anything"
+      // Convert "namespace:field:*" to match "namespace:field:anything"
+      const escapedPattern = pattern
+        .split('*')
+        .map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')) // Escape regex special chars
+        .join('.*'); // Replace * with .*
+
+      try {
+        const regex = new RegExp(`^${escapedPattern}$`);
+        return regex.test(key);
+      } catch (error) {
+        console.warn('Invalid pattern:', pattern, error);
+        return false;
+      }
+    }
+
+    // Support for explicit regex patterns (if the pattern starts and ends with /)
+    if (pattern.startsWith('/') && pattern.endsWith('/')) {
+      try {
+        const regexPattern = pattern.slice(1, -1); // Remove leading and trailing /
+        const regex = new RegExp(regexPattern);
+        return regex.test(key);
+      } catch (error) {
+        console.warn('Invalid regex pattern:', pattern, error);
+        return false;
+      }
+    }
+
+    return false;
+  });
+}
+
 // Broadcast changes to all subscribed clients
 function broadcastChange(key: string, value: string | null, sourceClientId: string) {
   activeClients.forEach(client => {
     if (client.getConnectionState() !== ConnectionState.CONNECTED) return;
     const tokenInfo = client.getTokenInfo();
-    if (tokenInfo.subscribeKeys.includes(key)) {
+
+    // Check if the key matches any subscription pattern
+    if (matchesSubscriptionPattern(key, tokenInfo.subscribeKeys)) {
       // Simulate async notification
       setImmediate(() => {
         client.notifySubscribers({
@@ -201,12 +246,14 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     const value = globalHPKVStore.get(key);
-
+    if (!value) {
+      return { code: 404, error: 'Key not found' };
+    }
     return {
       code: 200,
       success: true,
       key,
-      value: value ?? null,
+      value: value,
     };
   }
 
@@ -226,6 +273,29 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
 
     // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
+
+    // Check if this is a deletion request (when value contains null in the stored value)
+    try {
+      const parsedValue = JSON.parse(value);
+      if (parsedValue && typeof parsedValue === 'object' && parsedValue.value === null) {
+        // This is a deletion request - remove the key from storage
+        const existed = globalHPKVStore.has(key);
+        globalHPKVStore.delete(key);
+
+        if (existed) {
+          // Broadcast deletion to other clients
+          broadcastChange(key, null, this.clientId);
+        }
+
+        return {
+          code: 200,
+          success: true,
+          key,
+        };
+      }
+    } catch {
+      // If not JSON or parsing fails, continue with normal set operation
+    }
 
     if (partialUpdate && globalHPKVStore.has(key)) {
       // Simulate JSON patching for partial updates
@@ -450,6 +520,58 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
   // Test helper to get all active clients
   static getActiveClients(): MockHPKVSubscriptionClient[] {
     return Array.from(activeClients);
+  }
+
+  /**
+   * Test utility: Check if a client would receive notifications for a key
+   */
+  wouldReceiveNotificationForKey(key: string): boolean {
+    if (this.getConnectionState() !== ConnectionState.CONNECTED) return false;
+    return matchesSubscriptionPattern(key, this.tokenInfo.subscribeKeys);
+  }
+
+  /**
+   * Test utility: Get all subscription patterns for this client
+   */
+  getSubscriptionPatterns(): string[] {
+    return [...this.tokenInfo.subscribeKeys];
+  }
+
+  /**
+   * Test utility: Simulate pattern-based key changes for testing
+   */
+  static simulateGranularUpdates(
+    namespace: string,
+    updates: Array<{
+      field: string;
+      subKey?: string;
+      value: any;
+      operation?: 'set' | 'delete';
+    }>,
+  ) {
+    updates.forEach(update => {
+      const key = update.subKey
+        ? `${namespace}:${update.field}:${update.subKey}`
+        : `${namespace}:${update.field}`;
+
+      if (update.operation === 'delete') {
+        globalHPKVStore.delete(key);
+        broadcastChange(key, null, 'test_simulator');
+      } else {
+        const value =
+          typeof update.value === 'string' ? update.value : JSON.stringify(update.value);
+        globalHPKVStore.set(key, value);
+        broadcastChange(key, value, 'test_simulator');
+      }
+    });
+  }
+
+  /**
+   * Test utility: Get all keys that match a pattern
+   */
+  static getKeysMatchingPattern(pattern: string): string[] {
+    const keys = Array.from(globalHPKVStore.keys());
+    return keys.filter(key => matchesSubscriptionPattern(key, [pattern]));
   }
 }
 

@@ -13,7 +13,7 @@ const TodoList: React.FC<TodoListProps> = ({ filter }) => {
   const toggleTodo = useTodoStore(state => state.toggleTodo);
   const removeTodo = useTodoStore(state => state.removeTodo);
 
-  const filteredTodos = todos.filter(todo => {
+  const filteredTodos = Object.values(todos).filter(todo => {
     if (filter === 'all') return true;
     if (filter === 'active') return !todo.completed;
     if (filter === 'completed') return todo.completed;
@@ -24,12 +24,12 @@ const TodoList: React.FC<TodoListProps> = ({ filter }) => {
     <ul className={styles['todo-list']}>
       {filteredTodos.map(todo => (
         <li
-          key={todo.id}
+          key={todo.id ?? Date.now().toString()}
           className={`${styles['todo-item']} ${todo.completed ? styles['completed'] : ''}`}
         >
           <input
             type="checkbox"
-            checked={todo.completed}
+            checked={!!todo.completed}
             onChange={() => toggleTodo(todo.id)}
             className={styles['todo-checkbox']}
           />

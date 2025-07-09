@@ -1,13 +1,14 @@
 import {
-  multiplayer,
   MultiplayerOptions,
   MultiplayerState,
   WithMultiplayer,
-} from '../../src/multiplayer';
-import { LogLevel } from '../../src/logger';
+  ImmerStateCreator,
+  WithMultiplayerMiddleware,
+} from '../../src/types/multiplayer-types';
+import { LogLevel } from '../../src/monitoring/logger';
 import { create, StoreApi, UseBoundStore } from 'zustand';
-import { StateCreator } from 'zustand';
 import { createUniqueStoreName } from './test-utils';
+import { multiplayer } from '../../src/multiplayer';
 
 const defaultMultiplayerOptions = {
   apiKey: 'test-api-key',
@@ -16,22 +17,16 @@ const defaultMultiplayerOptions = {
 };
 
 export class StoreCreator {
-  private storeRegistry: Map<
-    string,
-    UseBoundStore<StoreApi<unknown & { multiplayer: MultiplayerState }>>
-  > = new Map();
+  private storeRegistry: Map<string, UseBoundStore<StoreApi<any>>> = new Map();
 
   createStore<T>(
-    config: StateCreator<T, [['zustand/multiplayer', unknown]], []>,
+    config: ImmerStateCreator<T, [['zustand/multiplayer', unknown]], []>,
     options?: Partial<MultiplayerOptions<T>> | MultiplayerOptions<T>,
-  ): UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState }>> {
+  ): UseBoundStore<WithMultiplayerMiddleware<StoreApi<WithMultiplayer<T>>, WithMultiplayer<T>>> {
     const namespace = createUniqueStoreName('test-namespace');
     const opts = { namespace, ...defaultMultiplayerOptions, ...options };
     const store = create<WithMultiplayer<T>>()(multiplayer(config, opts));
-    this.storeRegistry.set(
-      opts.namespace,
-      store as UseBoundStore<StoreApi<unknown & { multiplayer: MultiplayerState }>>,
-    );
+    this.storeRegistry.set(opts.namespace, store);
     return store;
   }
 
@@ -41,8 +36,7 @@ export class StoreCreator {
       await state.multiplayer.clearStorage();
       await state.multiplayer.destroy();
     } catch (error) {
-      // Ignore cleanup errors - they're expected in some test scenarios
-      console.warn('Store cleanup failed (expected in mock scenarios):', error.message);
+      // Ignore cleanup errors - they're expected in some test scenarios      console.warn('Store cleanup failed (expected in mock scenarios):', error.message);
     }
     await state.multiplayer.disconnect();
   }

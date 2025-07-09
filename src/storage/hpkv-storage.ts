@@ -6,10 +6,20 @@ import {
   ConnectionState as HPKVConnectionState,
   ConnectionConfig,
 } from '@hpkv/websocket-client';
-import { Logger } from './logger';
-import { OperationTracker, createOperationTracker } from './operationTracker';
-import { RetryConfig, RetryManager, createRetryManager } from './retry';
-import { TokenHelper, TokenResponse } from './token-helper';
+import { TokenHelper, TokenResponse } from '../auth/token-helper';
+import { SecureTokenCache } from '../auth/token-manager';
+import { OperationTracker, createOperationTracker } from '../core/operation-tracker';
+import { Logger } from '../monitoring/logger';
+import { BrowserConnectivityManager } from '../network/connectivity-manager';
+import { RetryConfig, RetryManager, createRetryManager } from '../network/retry';
+import {
+  generateClientId,
+  normalizeError,
+  getCurrentTimestamp,
+  clearTimeoutSafely,
+} from '../utils';
+import { ConnectionManager } from './connection-manager';
+import { StorageKeyManager } from './storage-key-manager';
 
 export interface HPKVChangeEvent {
   key: string;
@@ -93,6 +103,13 @@ export interface HPKVStorage {
   setItem(key: string, value: unknown): Promise<void>;
 
   /**
+   * Removes the value for a specific key in the storage.
+   * @param key - The key of the item to remove.
+   * @returns A promise that resolves when the item is removed.
+   */
+  removeItem(key: string): Promise<void>;
+
+  /**
    * Clears all items from the storage.
    * @returns A promise that resolves when the storage is cleared.
    */
@@ -103,150 +120,6 @@ export interface HPKVStorage {
    * @returns A promise that resolves when the client is destroyed.
    */
   destroy(): Promise<void>;
-}
-
-/**
- * Generates a unique client ID for this instance
- */
-function generateClientId(): string {
-  return `client_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-}
-
-/**
- * Secure token storage that prevents memory dumps
- */
-class SecureTokenCache {
-  private tokenData: { token: string; expiresAt: number } | null = null;
-  private isRefreshing: boolean = false;
-
-  set(token: string, expiresAt: number): void {
-    this.tokenData = { token, expiresAt };
-  }
-
-  get(): { token: string; expiresAt: number } | null {
-    return this.tokenData;
-  }
-
-  clear(): void {
-    if (this.tokenData) {
-      // Overwrite sensitive data before clearing
-      this.tokenData.token = '';
-      this.tokenData = null;
-    }
-  }
-
-  isValid(): boolean {
-    return this.tokenData !== null && Date.now() < this.tokenData.expiresAt;
-  }
-
-  setRefreshing(refreshing: boolean): void {
-    this.isRefreshing = refreshing;
-  }
-
-  getRefreshing(): boolean {
-    return this.isRefreshing;
-  }
-}
-
-/**
- * Connection manager to handle redundant connection checks
- */
-class ConnectionManager {
-  private connectionState: HPKVConnectionState = HPKVConnectionState.DISCONNECTED;
-  private lastConnectionCheck: number = 0;
-  private readonly CONNECTION_CHECK_THROTTLE = 100; // ms
-
-  constructor(private client: HPKVSubscriptionClient | null) {}
-
-  updateClient(client: HPKVSubscriptionClient | null): void {
-    this.client = client;
-  }
-
-  updateConnectionState(state: HPKVConnectionState): void {
-    this.connectionState = state;
-    this.lastConnectionCheck = Date.now();
-  }
-
-  isConnected(): boolean {
-    const now = Date.now();
-    if (now - this.lastConnectionCheck < this.CONNECTION_CHECK_THROTTLE) {
-      return this.connectionState === HPKVConnectionState.CONNECTED;
-    }
-
-    if (this.client) {
-      const stats = this.client.getConnectionStats();
-      if (stats) {
-        this.connectionState = stats.connectionState ?? HPKVConnectionState.DISCONNECTED;
-        this.lastConnectionCheck = now;
-      }
-    }
-
-    return this.connectionState === HPKVConnectionState.CONNECTED;
-  }
-
-  getConnectionState(): HPKVConnectionState {
-    return this.connectionState;
-  }
-}
-
-/**
- * Browser connectivity manager that works in both browser and Node.js environments
- */
-class BrowserConnectivityManager {
-  private isOnline: boolean;
-  private listeners: Set<(isOnline: boolean) => void> = new Set();
-  private isBrowser: boolean;
-
-  constructor() {
-    // Detect if we're in a browser environment
-    this.isBrowser = typeof window !== 'undefined' && typeof navigator !== 'undefined';
-
-    if (this.isBrowser) {
-      this.isOnline = navigator.onLine;
-      window.addEventListener('online', this.handleOnline);
-      window.addEventListener('offline', this.handleOffline);
-    } else {
-      // In Node.js environment, assume we're always online
-      this.isOnline = true;
-    }
-  }
-
-  private handleOnline = (): void => {
-    this.isOnline = true;
-    this.notifyListeners(true);
-  };
-
-  private handleOffline = (): void => {
-    this.isOnline = false;
-    this.notifyListeners(false);
-  };
-
-  private notifyListeners(isOnline: boolean): void {
-    for (const listener of this.listeners) {
-      try {
-        listener(isOnline);
-      } catch (error) {
-        console.error('Error in connectivity listener:', error);
-      }
-    }
-  }
-
-  addListener(listener: (isOnline: boolean) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  getIsOnline(): boolean {
-    return this.isOnline;
-  }
-
-  destroy(): void {
-    if (this.isBrowser) {
-      window.removeEventListener('online', this.handleOnline);
-      window.removeEventListener('offline', this.handleOffline);
-    }
-    this.listeners.clear();
-  }
 }
 
 /**
@@ -275,6 +148,7 @@ class HPKVStorageImpl implements HPKVStorage {
   private storageOptions: HPKVStorageOptions;
   private operationTracker: OperationTracker;
   private connectivityManager: BrowserConnectivityManager;
+  private keyManager: StorageKeyManager;
 
   /**
    * Gets the current connection status
@@ -299,6 +173,7 @@ class HPKVStorageImpl implements HPKVStorage {
     if (!storageOptions.namespace) {
       throw new Error('namespace is required');
     }
+
     this.storageOptions = storageOptions;
     this.namespace = storageOptions.namespace;
     this.subscribedKeys = subscribedKeys;
@@ -309,6 +184,7 @@ class HPKVStorageImpl implements HPKVStorage {
     this.connectionManager = new ConnectionManager(null);
     this.operationTracker = createOperationTracker();
     this.connectivityManager = new BrowserConnectivityManager();
+    this.keyManager = new StorageKeyManager(this.namespace);
     this.setupConnectivityHandling();
   }
 
@@ -335,11 +211,10 @@ class HPKVStorageImpl implements HPKVStorage {
   private handleBrowserOnline(): void {
     // Attempt to reconnect when browser comes back online
     this.ensureConnection().catch(error => {
-      this.logger.error(
-        'Failed to reconnect after coming online',
-        error instanceof Error ? error : new Error(String(error)),
-        { operation: 'online-reconnect', clientId: this.clientId },
-      );
+      this.logger.error('Failed to reconnect after coming online', normalizeError(error), {
+        operation: 'online-reconnect',
+        clientId: this.clientId,
+      });
     });
   }
 
@@ -363,10 +238,11 @@ class HPKVStorageImpl implements HPKVStorage {
         this.storageOptions.clientConfig,
       );
       this.connectionManager.updateClient(this.client);
-      this.subscribeToConnection();
-      this.subscribeToChanges();
 
+      this.subscribeToChanges();
+      this.subscribeToConnection();
       await this.client.connect();
+
       this.connectionManager.updateConnectionState(HPKVConnectionState.CONNECTED);
     }, 'setupClient');
   }
@@ -395,6 +271,10 @@ class HPKVStorageImpl implements HPKVStorage {
     };
 
     const onError = () => {
+      this.logger.debug('Error in connection', {
+        operation: 'connection-error',
+        clientId: this.clientId,
+      });
       this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
       this.notifyConnectionListeners(HPKVConnectionState.DISCONNECTED);
     };
@@ -426,11 +306,12 @@ class HPKVStorageImpl implements HPKVStorage {
       this.client.unsubscribe(this.subscriptionId);
       this.subscriptionId = null;
     }
-
     this.subscriptionId = this.client.subscribe((data: HPKVNotificationResponse) => {
-      if (!data.key || data.value === undefined) return;
+      if (!data.key || data.value === undefined) {
+        return;
+      }
 
-      const keyWithoutPrefix = this.getKeyWithoutPrefix(data.key);
+      const keyWithoutPrefix = this.keyManager.getKeyWithoutPrefix(data.key);
 
       try {
         const valueAsString = typeof data.value === 'string' ? data.value : String(data.value);
@@ -444,14 +325,12 @@ class HPKVStorageImpl implements HPKVStorage {
           key: keyWithoutPrefix,
           value: newValue?.value ?? null,
         };
-
         this.notifyChangeListeners(changeEvent);
       } catch (error) {
-        this.logger.error(
-          `Failed to process change for key ${data.key}`,
-          error instanceof Error ? error : new Error(String(error)),
-          { operation: 'change-processing', clientId: this.clientId },
-        );
+        this.logger.error(`Failed to process change for key ${data.key}`, normalizeError(error), {
+          operation: 'change-processing',
+          clientId: this.clientId,
+        });
       }
     });
 
@@ -467,19 +346,16 @@ class HPKVStorageImpl implements HPKVStorage {
    * Notifies global listeners
    */
   private notifyChangeListeners(event: HPKVChangeEvent): void {
-    setTimeout(() => {
-      for (const listener of this.changeListeners) {
-        try {
-          listener(event);
-        } catch (error) {
-          this.logger.error(
-            'Error in global listener',
-            error instanceof Error ? error : new Error(String(error)),
-            { operation: 'change-listener', clientId: this.clientId },
-          );
-        }
+    for (const listener of this.changeListeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.logger.error('Error in global listener', normalizeError(error), {
+          operation: 'change-listener',
+          clientId: this.clientId,
+        });
       }
-    }, 0);
+    }
   }
 
   private notifyConnectionListeners(state: HPKVConnectionState): void {
@@ -487,11 +363,10 @@ class HPKVStorageImpl implements HPKVStorage {
       try {
         listener(state);
       } catch (error) {
-        this.logger.error(
-          'Error in connection listener',
-          error instanceof Error ? error : new Error(String(error)),
-          { operation: 'connection-listener', clientId: this.clientId },
-        );
+        this.logger.error('Error in connection listener', normalizeError(error), {
+          operation: 'connection-listener',
+          clientId: this.clientId,
+        });
       }
     }
   }
@@ -544,7 +419,6 @@ class HPKVStorageImpl implements HPKVStorage {
   }
 
   private async performTokenGeneration(): Promise<string> {
-    // Clear expired token
     this.secureTokenCache.clear();
     this.clearTokenRefreshTimer();
 
@@ -553,12 +427,11 @@ class HPKVStorageImpl implements HPKVStorage {
     if (this.storageOptions.apiKey) {
       const tokenHelper = new TokenHelper(
         this.storageOptions.apiKey,
-        this.storageOptions.apiBaseUrl || '',
+        this.storageOptions.apiBaseUrl,
       );
-      token = await tokenHelper.generateTokenForStore(
-        this.namespace,
-        this.subscribedKeys.map(key => this.getFullKey(key)),
-      );
+      const fullSubscribedKeys = this.subscribedKeys.map(key => this.keyManager.getFullKey(key));
+
+      token = await tokenHelper.generateTokenForStore(this.namespace, fullSubscribedKeys);
     } else if (this.storageOptions.tokenGenerationUrl) {
       token = await this.fetchToken();
     } else {
@@ -576,11 +449,10 @@ class HPKVStorageImpl implements HPKVStorage {
     if (refreshDelay > 0) {
       this.tokenRefreshTimer = setTimeout(() => {
         this.refreshToken().catch(error => {
-          this.logger.error(
-            'Failed to refresh token automatically',
-            error instanceof Error ? error : new Error(String(error)),
-            { operation: 'token-refresh', clientId: this.clientId },
-          );
+          this.logger.error('Failed to refresh token automatically', normalizeError(error), {
+            operation: 'token-refresh',
+            clientId: this.clientId,
+          });
         });
       }, refreshDelay);
     }
@@ -620,11 +492,10 @@ class HPKVStorageImpl implements HPKVStorage {
       // Reconnect with new token
       await this.ensureConnection();
     } catch (error) {
-      this.logger.error(
-        'Failed to refresh token and reconnect',
-        error instanceof Error ? error : new Error(String(error)),
-        { operation: 'token-refresh', clientId: this.clientId },
-      );
+      this.logger.error('Failed to refresh token and reconnect', normalizeError(error), {
+        operation: 'token-refresh',
+        clientId: this.clientId,
+      });
     }
   }
 
@@ -632,10 +503,8 @@ class HPKVStorageImpl implements HPKVStorage {
    * Clears the token refresh timer
    */
   private clearTokenRefreshTimer(): void {
-    if (this.tokenRefreshTimer) {
-      clearTimeout(this.tokenRefreshTimer);
-      this.tokenRefreshTimer = null;
-    }
+    clearTimeoutSafely(this.tokenRefreshTimer);
+    this.tokenRefreshTimer = null;
   }
 
   private async fetchToken(): Promise<string> {
@@ -645,8 +514,9 @@ class HPKVStorageImpl implements HPKVStorage {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           namespace: this.namespace,
-          subscribedKeys: this.subscribedKeys.map(key => this.getFullKey(key)),
-          publishedKeys: this.publishedKeys.map(key => this.getFullKey(key)),
+          subscribedKeysAndPatterns: this.subscribedKeys.map(key =>
+            this.keyManager.getFullKey(key),
+          ),
         }),
       });
       if (!response.ok) {
@@ -714,22 +584,6 @@ class HPKVStorageImpl implements HPKVStorage {
   }
 
   /**
-   * Prefixes a key with the namespace
-   * @param key Key to prefix
-   */
-  private getFullKey(key: string): string {
-    return `${this.namespace}:${key}`;
-  }
-
-  /**
-   * Removes the namespace prefix from a full key
-   * @param fullKey Key with namespace prefix
-   */
-  private getKeyWithoutPrefix(fullKey: string): string {
-    return fullKey.slice(this.namespace.length + 1);
-  }
-
-  /**
    * Waits for all running operations to complete with a timeout
    * @param timeoutMs Maximum time to wait in milliseconds
    * @returns Promise that resolves when all operations are done or timeout is reached
@@ -743,17 +597,43 @@ class HPKVStorageImpl implements HPKVStorage {
     const operation = async (): Promise<Map<string, unknown>> => {
       await this.ensureConnection();
       return this.retryManager.executeWithRetry(async () => {
-        const allItems = await this.client?.range(`${this.namespace}:`, `${this.namespace}:~`);
+        const range = this.keyManager.getNamespaceRange();
+        let allRecords: any[] = [];
+        let currentStart = range.start;
+        let hasMore = true;
 
-        if (!allItems) {
-          return new Map();
+        // Keep fetching until all keys are retrieved
+        while (hasMore) {
+          const batchResult = await this.client?.range(currentStart, range.end, { limit: 500 });
+
+          if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          allRecords = allRecords.concat(batchResult.records);
+
+          // Check if there are more results
+          if (batchResult.truncated) {
+            // Use the last key from this batch as the starting point for the next call
+            // We need to increment beyond the last key to avoid duplicates
+            const lastKey = batchResult.records[batchResult.records.length - 1].key;
+            currentStart = lastKey + '\0'; // Add null character to get the next key
+          } else {
+            hasMore = false;
+          }
         }
 
-        const normalizedItems = allItems.records.map(item => ({
-          key: this.getKeyWithoutPrefix(item.key),
+        const normalizedItems = allRecords.map(item => ({
+          key: this.keyManager.getKeyWithoutPrefix(item.key),
           value: JSON.parse(item.value) as StoredValue,
         }));
-        const filteredItems = normalizedItems.filter(item => this.publishedKeys.includes(item.key));
+
+        const filteredItems = this.keyManager.filterItemsByPublishedKeys(
+          normalizedItems,
+          this.publishedKeys,
+        );
+
         return new Map(filteredItems.map(item => [item.key, item.value.value]));
       }, 'getAllItems');
     };
@@ -763,20 +643,34 @@ class HPKVStorageImpl implements HPKVStorage {
 
   async setItem(key: string, value: unknown): Promise<void> {
     this.checkDestroyed();
+
     const operation = async (): Promise<void> => {
-      if (!this.publishedKeys.includes(key)) {
+      const logicalKey = this.keyManager.extractLogicalKey(key);
+      const isAllowed = this.keyManager.isKeyAllowedToPublish(logicalKey, this.publishedKeys);
+
+      if (!isAllowed) {
         return Promise.resolve();
       }
+
       await this.ensureConnection();
 
-      const fullKey = this.getFullKey(key);
+      const fullKey = this.keyManager.ensureNamespacePrefix(key);
       const valueToStore: StoredValue = {
         value,
         clientId: this.clientId,
-        timestamp: Date.now(),
+        timestamp: getCurrentTimestamp(),
       };
       const stringValue = JSON.stringify(valueToStore);
-      await this.client?.set(fullKey, stringValue, true);
+      this.logger.debug(`Setting item: ${fullKey}`, {
+        operation: 'setItem',
+        clientId: this.clientId,
+      });
+      await this.client?.set(fullKey, stringValue, true).catch(error => {
+        this.logger.error('Failed to set item', normalizeError(error), {
+          operation: 'setItem',
+          clientId: this.clientId,
+        });
+      });
     };
 
     return this.operationTracker.trackOperation(operation());
@@ -787,7 +681,7 @@ class HPKVStorageImpl implements HPKVStorage {
     const operation = async (): Promise<void> => {
       await this.ensureConnection();
       return this.retryManager.executeWithRetry(async () => {
-        const fullKey = this.getFullKey(key);
+        const fullKey = this.keyManager.ensureNamespacePrefix(key);
         await this.client?.delete(fullKey);
       }, `removeItem-${key}`);
     };
@@ -799,9 +693,30 @@ class HPKVStorageImpl implements HPKVStorage {
     this.checkDestroyed();
     const operation = async (): Promise<void> => {
       await this.ensureConnection();
-      const allItems = await this.getAllItems();
-      for (const key of allItems.keys()) {
-        await this.removeItem(key);
+      const range = this.keyManager.getNamespaceRange();
+      let currentStart = range.start;
+      let hasMore = true;
+
+      while (hasMore) {
+        const batchResult = await this.client?.range(currentStart, range.end, { limit: 500 });
+
+        if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        for (const item of batchResult.records) {
+          await this.retryManager.executeWithRetry(async () => {
+            await this.client?.delete(item.key);
+          }, `clear-${item.key}`);
+        }
+
+        if (batchResult.truncated) {
+          const lastKey = batchResult.records[batchResult.records.length - 1].key;
+          currentStart = lastKey + '\0';
+        } else {
+          hasMore = false;
+        }
       }
     };
 
@@ -862,11 +777,10 @@ class HPKVStorageImpl implements HPKVStorage {
       try {
         cleanup();
       } catch (error) {
-        this.logger.error(
-          'Cleanup callback failed',
-          error instanceof Error ? error : new Error(String(error)),
-          { operation: 'cleanup', clientId: this.clientId },
-        );
+        this.logger.error('Cleanup callback failed', normalizeError(error), {
+          operation: 'cleanup',
+          clientId: this.clientId,
+        });
       }
     }
 

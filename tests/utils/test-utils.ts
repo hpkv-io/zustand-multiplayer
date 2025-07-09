@@ -1,15 +1,14 @@
 import http from 'http';
 import { expect } from 'vitest';
-import { TokenHelper } from '../../src/token-helper';
-import { PerformanceMetrics } from '../../src/profiler';
-import { LogLevel } from '../../src/logger';
+import { TokenHelper } from '../../src/auth/token-helper';
+import { PerformanceMetrics } from '../../src/monitoring/profiler';
 
 // Helper function to wait for conditions
 export async function waitFor(
   callback: () => boolean | void | Promise<boolean | void>,
   options?: { timeout?: number; interval?: number },
 ): Promise<void> {
-  const timeout = options?.timeout || 5000;
+  const timeout = options?.timeout || 2000;
   const interval = options?.interval || 50;
   const startTime = Date.now();
 

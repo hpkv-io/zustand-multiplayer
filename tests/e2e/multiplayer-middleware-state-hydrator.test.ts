@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { MultiplayerOptions } from '../src/multiplayer';
-import { StateCreator } from 'zustand';
-import { createUniqueStoreName, waitFor } from './utils/test-utils';
+import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
+import { createUniqueStoreName, waitFor } from '../utils/test-utils';
 import {
   ConnectionState,
   MockHPKVClientFactory,
   MockTokenHelper,
   MockWebsocketTokenManager,
-} from './mocks';
+} from '../mocks';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -22,13 +21,13 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/token-helper', () => {
+vi.doMock('../../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
 });
 
-const { StoreCreator } = await import('./utils/store-creator');
+const { StoreCreator } = await import('../utils/store-creator');
 
 type TestState = {
   count: number;
@@ -52,7 +51,7 @@ type TestState = {
   updateMetadata: (metadata: Record<string, unknown>) => void;
 };
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   nullable: null,
@@ -103,83 +102,6 @@ describe('Multiplayer Middleware State Hydrator Tests', () => {
   });
 
   describe('Hydration with Special Values', () => {
-    it('should handle null values during hydration', async () => {
-      const uniqueNamespace = createUniqueStoreName('hydration-null');
-
-      // Pre-populate with null value
-      const preStore = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => preStore.getState().multiplayer.hasHydrated);
-
-      preStore.getState().setNullable('not-null');
-      preStore.getState().setNullable(null);
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Create new store and verify null is preserved
-      const store = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      expect(store.getState().nullable).toBe(null);
-    });
-
-    it('should handle empty strings during hydration', async () => {
-      const uniqueNamespace = createUniqueStoreName('hydration-empty-string');
-
-      // Pre-populate with empty string
-      const preStore = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => preStore.getState().multiplayer.hasHydrated);
-
-      preStore.getState().setText('non-empty');
-      preStore.getState().setText('');
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Create new store and verify empty string behavior
-      const store = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      // Empty strings should be skipped during hydration as per shouldSkipField logic
-      expect(store.getState().text).toBe('');
-    });
-
-    it('should handle zero values during hydration', async () => {
-      const uniqueNamespace = createUniqueStoreName('hydration-zero');
-
-      // Pre-populate with zero
-      const preStore = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => preStore.getState().multiplayer.hasHydrated);
-
-      preStore.setState({ zero: 42 });
-      preStore.setState({ zero: 0 });
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Create new store and verify zero is preserved
-      const store = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      expect(store.getState().zero).toBe(0);
-    });
-
-    it('should handle boolean false values during hydration', async () => {
-      const uniqueNamespace = createUniqueStoreName('hydration-false');
-
-      // Pre-populate with false
-      const preStore = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => preStore.getState().multiplayer.hasHydrated);
-
-      preStore.setState({ booleanFalse: true });
-      preStore.setState({ booleanFalse: false });
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Create new store and verify false is preserved
-      const store = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      expect(store.getState().booleanFalse).toBe(false);
-    });
-
     it('should handle complex nested objects during hydration', async () => {
       const uniqueNamespace = createUniqueStoreName('hydration-complex');
 

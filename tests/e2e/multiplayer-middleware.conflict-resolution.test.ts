@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { StateCreator } from 'zustand';
-import { createUniqueStoreName, waitFor } from './utils/test-utils';
-import { MockHPKVClientFactory, MockTokenHelper, MockWebsocketTokenManager } from './mocks';
-import { MultiplayerOptions } from '../src/multiplayer';
+import { createUniqueStoreName, waitFor } from '../utils/test-utils';
+import { MockHPKVClientFactory, MockTokenHelper, MockWebsocketTokenManager } from '../mocks';
+import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
 
 vi.doMock('@hpkv/websocket-client', () => {
   return {
@@ -17,13 +16,13 @@ vi.doMock('@hpkv/websocket-client', () => {
   };
 });
 
-vi.doMock('../src/token-helper', () => {
+vi.doMock('../../src/auth/token-helper', () => {
   return {
     TokenHelper: MockTokenHelper,
   };
 });
 
-const { StoreCreator } = await import('./utils/store-creator');
+const { StoreCreator } = await import('../utils/store-creator');
 
 type TestState = {
   count: number;
@@ -32,7 +31,7 @@ type TestState = {
   setText: (text: string) => void;
 };
 
-const initializer: StateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
   nested: { value: 0 },
