@@ -7,19 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Future additions will be listed here
+## [0.4.1] 2025-07-14
 
 ### Changed
 
-- Future changes will be listed here
+- Upgraded websocket-client to latest version
 
-### Fixed
-
-- Future fixes will be listed here
-
-## [0.4.0]
+## [0.4.0] 2025-07-03
 
 ### Added
 
@@ -111,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.3.2...v0.4.0
 [0.3.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.3.0...v0.3.1

@@ -44,18 +44,15 @@ export class TokenHelper {
     namespace: string,
     subscribedKeysAnPatterns: string[],
   ): Promise<string> {
-    // Separate exact keys from patterns
     const exactKeys = subscribedKeysAnPatterns.filter(key => !key.includes('*'));
     const patterns = subscribedKeysAnPatterns.filter(key => key.includes('*'));
 
-    // Add wildcard patterns for exact keys that don't already have them
     const additionalPatterns = exactKeys
       .filter(key => !patterns.some(p => p.startsWith(key)))
       .map(key => `${key}:*`);
 
     const token = await this.tokenManager.generateToken({
-      subscribeKeys: exactKeys,
-      subscribePatterns: [...patterns, ...additionalPatterns],
+      subscribePatterns: [...patterns, ...exactKeys, ...additionalPatterns],
       accessPattern: `^${escapeRegExp(namespace)}:.*$`,
     });
 
