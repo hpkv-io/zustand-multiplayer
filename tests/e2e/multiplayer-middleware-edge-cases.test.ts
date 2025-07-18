@@ -62,12 +62,9 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
   setText: (text: string) => set({ text }),
   updateNested: (value: number) => set(state => ({ nested: { ...state.nested, value } })),
   updateDeepNested: (level: string) =>
-    set(state => ({
-      nested: {
-        ...state.nested,
-        deep: { level },
-      },
-    })),
+    set(state => {
+      state.nested.deep.level = level;
+    }),
   addItem: (item: string) => set(state => ({ items: [...state.items, item] })),
   clearItems: () => set({ items: [] }),
   replaceState: () =>

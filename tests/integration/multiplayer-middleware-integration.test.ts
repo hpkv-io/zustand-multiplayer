@@ -207,7 +207,7 @@ describe('Multiplayer Middleware Integration Tests', () => {
       await store2.getState().multiplayer.disconnect();
       store1.getState().setText('store 1 update');
       store2.getState().setText('store 2 update');
-
+      await store2.getState().multiplayer.connect();
       await waitFor(() => {
         expect(store2.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
       });

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { StateCreator } from 'zustand';
 import { createUniqueStoreName, waitFor } from '../utils/test-utils';
 import { MockHPKVClientFactory, MockTokenHelper, MockWebsocketTokenManager } from '../mocks';
 import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
@@ -35,7 +34,6 @@ type TestState = {
 const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
-  nested: { value: 0 },
   increment: () => set(state => ({ count: state.count + 1 })),
   setText: (text: string) => set({ text }),
 });

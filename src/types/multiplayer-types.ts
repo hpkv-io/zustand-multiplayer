@@ -159,7 +159,7 @@ export enum ErrorSeverity {
  * Error categories for better organization
  */
 export enum ErrorCategory {
-  AUTHENTICATION = 'authentication',
+  TOKEN_GENERATION = 'token_generation',
   NETWORK = 'network',
   STORAGE = 'storage',
   HYDRATION = 'hydration',
@@ -224,17 +224,17 @@ export class MultiplayerError extends Error {
 /**
  * Authentication-related errors
  */
-export class AuthenticationError extends MultiplayerError {
+export class TokenGenerationError extends MultiplayerError {
   constructor(message: string, context?: ErrorContext) {
     super(
       message,
-      'AUTHENTICATION_ERROR',
+      'TOKEN_GENERATION_ERROR',
       true,
       context,
       ErrorSeverity.HIGH,
-      ErrorCategory.AUTHENTICATION,
+      ErrorCategory.TOKEN_GENERATION,
     );
-    this.name = 'AuthenticationError';
+    this.name = 'TokenGenerationError';
   }
 }
 

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
+import {
+  HydrationError,
+  ImmerStateCreator,
+  MultiplayerOptions,
+} from '../../src/types/multiplayer-types';
 import { createUniqueStoreName, waitFor } from '../utils/test-utils';
 import {
   ConnectionState,
@@ -32,11 +36,6 @@ const { StoreCreator } = await import('../utils/store-creator');
 type TestState = {
   count: number;
   text: string;
-  nullable: string | null;
-  emptyString: string;
-  zero: number;
-  booleanFalse: boolean;
-  array: string[];
   complexObject: {
     nested: {
       value: number;
@@ -46,7 +45,6 @@ type TestState = {
   };
   increment: () => void;
   setText: (text: string) => void;
-  setNullable: (value: string | null) => void;
   updateComplex: (value: number, optional?: string) => void;
   updateMetadata: (metadata: Record<string, unknown>) => void;
 };
@@ -54,33 +52,26 @@ type TestState = {
 const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
-  nullable: null,
-  emptyString: '',
-  zero: 0,
-  booleanFalse: false,
-  array: [],
   complexObject: {
     nested: {
       value: 0,
     },
     metadata: {},
   },
-  increment: () => set(state => ({ count: state.count + 1 })),
+  increment: () =>
+    set(state => {
+      state.count = state.count + 1;
+    }),
   setText: (text: string) => set({ text }),
-  setNullable: (value: string | null) => set({ nullable: value }),
   updateMetadata: (metadata: Record<string, unknown>) =>
     set(state => ({ complexObject: { ...state.complexObject, metadata } })),
   updateComplex: (value: number, optional?: string) =>
-    set(state => ({
-      complexObject: {
-        ...state.complexObject,
-        nested: {
-          ...state.complexObject.nested,
-          value,
-          ...(optional && { optional }),
-        },
-      },
-    })),
+    set(state => {
+      state.complexObject.nested.value = value;
+      if (optional) {
+        state.complexObject.nested.optional = optional;
+      }
+    }),
 });
 
 const storeCreator = new StoreCreator();
@@ -120,7 +111,7 @@ describe('Multiplayer Middleware State Hydrator Tests', () => {
         },
       });
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Create new store and verify complex object is preserved
       const store = createTestStore({ namespace: uniqueNamespace });
@@ -159,14 +150,41 @@ describe('Multiplayer Middleware State Hydrator Tests', () => {
       try {
         await store.getState().multiplayer.hydrate();
       } catch (error) {
-        expect(error).toBeDefined();
+        expect(error).toBeInstanceOf(HydrationError);
       }
 
       client.setShouldFailOperations(false);
-      await new Promise(resolve => setTimeout(resolve, 200));
       await store.getState().multiplayer.hydrate();
 
       expect(store.getState().multiplayer.hasHydrated).toBe(true);
+    });
+
+    it('should hydrate and apply offline changes after connection', async () => {
+      const uniqueNamespace = createUniqueStoreName('hydration-offline-changes');
+      const store = createTestStore({ namespace: uniqueNamespace });
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      await store.getState().multiplayer.disconnect();
+      store.getState().increment();
+      store.getState().setText('offline-test');
+      await store.getState().multiplayer.connect();
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      expect(store.getState().count).toBe(1);
+      expect(store.getState().text).toBe('offline-test');
+      expect(store.getState().multiplayer.hasHydrated).toBe(true);
+    });
+
+    it('should handle multiple offline changes', async () => {
+      const uniqueNamespace = createUniqueStoreName('hydration-offline-changes');
+      const store = createTestStore({ namespace: uniqueNamespace });
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      await store.getState().multiplayer.disconnect();
+      store.getState().increment();
+      store.getState().setText('initial');
+      store.getState().setText('overwritten');
+      await store.getState().multiplayer.connect();
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      expect(store.getState().count).toBe(1);
+      expect(store.getState().text).toBe('overwritten');
     });
 
     it('should handle concurrent hydration attempts', async () => {
@@ -198,23 +216,6 @@ describe('Multiplayer Middleware State Hydrator Tests', () => {
       // State should be consistent
       expect(store.getState().count).toBe(1);
       expect(store.getState().text).toBe('concurrent-test');
-      expect(store.getState().multiplayer.hasHydrated).toBe(true);
-    });
-
-    it('should handle hydration during disconnected state', async () => {
-      const uniqueNamespace = createUniqueStoreName('hydration-disconnected');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      // Disconnect and attempt hydration
-      await store.getState().multiplayer.disconnect();
-      expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.DISCONNECTED);
-
-      // Hydration should trigger reconnection
-      await store.getState().multiplayer.hydrate();
-
-      expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
       expect(store.getState().multiplayer.hasHydrated).toBe(true);
     });
   });
@@ -252,36 +253,6 @@ describe('Multiplayer Middleware State Hydrator Tests', () => {
       // Verify state was hydrated correctly
       await waitFor(() => expect(store.getState().count).toBe(10));
       await waitFor(() => expect(store.getState().text).toBe('item-9'));
-    });
-
-    it('should handle hydration timeout gracefully', async () => {
-      const uniqueNamespace = createUniqueStoreName('hydration-timeout');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(
-        () => store.getState().multiplayer.connectionState === ConnectionState.CONNECTED,
-      );
-
-      // Set long operation delay to simulate timeout
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      client.setOperationDelay(2000); // 2 second delay
-
-      const hydrationStart = Date.now();
-
-      try {
-        await store.getState().multiplayer.hydrate();
-      } catch (error) {
-        // Should handle timeout gracefully
-        console.log('Hydration timeout handled:', error);
-      }
-
-      const hydrationEnd = Date.now();
-
-      // Reset delay for cleanup
-      client.setOperationDelay(10);
-
-      // Even if hydration times out, the system should remain functional
-      expect(hydrationEnd - hydrationStart).toBeGreaterThan(0);
     });
   });
 

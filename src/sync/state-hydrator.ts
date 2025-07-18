@@ -4,8 +4,7 @@ import { HPKVStorage } from '../storage/hpkv-storage';
 import { StorageKeyManager } from '../storage/storage-key-manager';
 import { HydrationError } from '../types/multiplayer-types';
 import { normalizeError, getCurrentTimestamp } from '../utils';
-import { createMemoizedStateReconstruction } from '../utils/memoization';
-import { PathManager, fromLegacyPath } from '../utils/path-manager';
+import { PathManager } from '../utils/path-manager';
 
 type StateReconstruction = Record<string, unknown>;
 
@@ -13,7 +12,7 @@ type StateReconstruction = Record<string, unknown>;
  * Safely merges nested paths into a state object using PathManager
  */
 function setNestedPath(target: StateReconstruction, path: string[], value: unknown): void {
-  const statePath = fromLegacyPath(path);
+  const statePath = PathManager.fromArray(path);
   PathManager.setValue(target, statePath, value);
 }
 
@@ -26,19 +25,12 @@ export class StateHydrator<TState> {
   private hydrationPromise: Promise<void> | null = null;
   private hasHydrated = false;
 
-  private memoizedStateReconstruction: (items: Map<string, unknown>) => Partial<TState>;
-
   constructor(
     private client: HPKVStorage,
     private logger: Logger,
     private performanceMonitor: PerformanceMonitor,
     private keyManager: StorageKeyManager,
-  ) {
-    // Create memoized version of state reconstruction
-    this.memoizedStateReconstruction = createMemoizedStateReconstruction(
-      this.reconstructStateFromItems.bind(this),
-    );
-  }
+  ) {}
 
   async hydrate(
     applyStateChange: (
@@ -56,7 +48,7 @@ export class StateHydrator<TState> {
       return;
     }
 
-    this.logger.info('Starting hydration', {
+    this.logger.debug('Starting hydration', {
       operation: 'hydration',
       clientId: this.client.getClientId(),
     });
@@ -67,6 +59,10 @@ export class StateHydrator<TState> {
 
     try {
       await this.hydrationPromise;
+    } catch (error) {
+      throw new HydrationError('Failed to hydrate state', {
+        error: normalizeError(error).message,
+      });
     } finally {
       this.isHydrating = false;
       this.hydrationPromise = null;
@@ -85,19 +81,21 @@ export class StateHydrator<TState> {
     try {
       const allItems = await this.client.getAllItems();
 
-      // Reconstruct the state from granular storage using memoized version
-      const reconstructedState = this.memoizedStateReconstruction(allItems);
+      const reconstructedState = this.reconstructStateFromItems(allItems);
 
-      // Safely invoke onHydrate callback
       this.invokeOnHydrateCallback(reconstructedState, onHydrate);
-
-      // Apply the reconstructed state
+      this.logger.debug(`Reconstructed state : ${JSON.stringify(reconstructedState)}`, {
+        operation: 'hydration',
+      });
       await applyStateChange(reconstructedState, false, true);
 
       this.hasHydrated = true;
       this.recordHydrationMetrics(startTime);
 
-      this.logger.info(`Hydrated state from database`, { operation: 'hydration' });
+      this.logger.debug(`Hydrated state from database`, {
+        operation: 'hydration',
+        clientId: this.client.getClientId(),
+      });
     } catch (error) {
       this.logger.error('Hydration failed', normalizeError(error), { operation: 'hydration' });
 
@@ -111,14 +109,14 @@ export class StateHydrator<TState> {
     const reconstructedState: StateReconstruction = {};
 
     for (const [key, value] of allItems.entries()) {
-      const parsed = this.keyManager.parseStorageKey(key);
+      const statePath = this.keyManager.parseStorageKey(key);
 
-      if (parsed.path.length === 1) {
+      if (statePath.depth === 1) {
         // Top-level field
-        reconstructedState[parsed.path[0]] = value;
+        reconstructedState[statePath.segments[0]] = value;
       } else {
         // Nested field - reconstruct the object hierarchy
-        setNestedPath(reconstructedState, parsed.path, value);
+        setNestedPath(reconstructedState, statePath.segments, value);
       }
     }
 

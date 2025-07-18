@@ -1,4 +1,5 @@
 import { WebsocketTokenManager } from '@hpkv/websocket-client';
+import { TokenGenerationError } from '../types/multiplayer-types';
 import { escapeRegExp, createGenericHandler } from '../utils';
 
 /**
@@ -44,15 +45,8 @@ export class TokenHelper {
     namespace: string,
     subscribedKeysAnPatterns: string[],
   ): Promise<string> {
-    const exactKeys = subscribedKeysAnPatterns.filter(key => !key.includes('*'));
-    const patterns = subscribedKeysAnPatterns.filter(key => key.includes('*'));
-
-    const additionalPatterns = exactKeys
-      .filter(key => !patterns.some(p => p.startsWith(key)))
-      .map(key => `${key}:*`);
-
     const token = await this.tokenManager.generateToken({
-      subscribePatterns: [...patterns, ...exactKeys, ...additionalPatterns],
+      subscribePatterns: [...subscribedKeysAnPatterns],
       accessPattern: `^${escapeRegExp(namespace)}:.*$`,
     });
 
@@ -61,7 +55,6 @@ export class TokenHelper {
 
   /**
    * Process a token request and return a token response
-   * Works with any framework by accepting a simple request object
    *
    * @param requestData The request data object or string
    * @returns TokenResponse object with the generated token
@@ -74,7 +67,7 @@ export class TokenHelper {
         try {
           parsedRequest = JSON.parse(requestData);
         } catch {
-          throw new Error('Invalid request: Could not parse request data');
+          throw new TokenGenerationError('Invalid request: Could not parse request data');
         }
       } else {
         parsedRequest = requestData as Partial<TokenRequest>;
@@ -83,14 +76,18 @@ export class TokenHelper {
       const { namespace, subscribedKeysAndPatterns } = parsedRequest;
 
       if (!namespace || typeof namespace !== 'string') {
-        throw new Error('Invalid request: namespace is required and must be a string');
+        throw new TokenGenerationError(
+          'Invalid request: namespace is required and must be a string',
+        );
       }
 
       const token = await this.generateTokenForStore(namespace, subscribedKeysAndPatterns || []);
 
       return { namespace, token };
     } catch (error) {
-      throw error instanceof Error ? error : new Error('Unknown error during token generation');
+      throw error instanceof Error
+        ? new TokenGenerationError(error.message)
+        : new TokenGenerationError('Unknown error during token generation');
     }
   }
 

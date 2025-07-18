@@ -265,9 +265,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should hydrate the store after creation', async () => {
       const uniqueNamespace = createUniqueStoreName('hydration-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
-
+      await waitFor(() => store1.getState().multiplayer.hasHydrated);
       store1.getState().increment();
       store1.getState().setText('Persisted Text');
+
       await new Promise(resolve => setTimeout(resolve, 100));
 
       const store2 = createTestStore({ namespace: uniqueNamespace });
@@ -295,7 +296,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
     it('should hydrate nested states correctly', async () => {
       const uniqueNamespace = createUniqueStoreName('nested-persistence-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
-
+      await waitFor(() => store1.getState().multiplayer.hasHydrated);
       store1.getState().updateNested(42);
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -321,6 +322,8 @@ describe('Multiplayer Middleware Basic Tests', () => {
       const uniqueNamespace = createUniqueStoreName('sync-primitives-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
+      await waitFor(() => store1.getState().multiplayer.hasHydrated);
+      await waitFor(() => store2.getState().multiplayer.hasHydrated);
 
       store1.getState().increment();
       store2.getState().setText('Synced Text');
@@ -335,9 +338,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
       const uniqueNamespace = createUniqueStoreName('sync-nested-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
+      await waitFor(() => store1.getState().multiplayer.hasHydrated);
+      await waitFor(() => store2.getState().multiplayer.hasHydrated);
 
       store1.getState().updateNested(100);
-
       await waitFor(() => expect(store2.getState().nested.value).toBe(100));
     });
 
@@ -505,7 +509,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
   });
 
   describe('Immer-Style Updates', () => {
-    it('should support immer-style draft updates', async () => {
+    it('should support immer-style updates', async () => {
       const uniqueNamespace = createUniqueStoreName('immer-updates-test');
       const store = createTestStore({ namespace: uniqueNamespace });
 
@@ -526,10 +530,12 @@ describe('Multiplayer Middleware Basic Tests', () => {
       const uniqueNamespace = createUniqueStoreName('immer-sync-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
+      await waitFor(() => store1.getState().multiplayer.hasHydrated);
+      await waitFor(() => store2.getState().multiplayer.hasHydrated);
 
-      store1.setState(draft => {
-        draft.count = 10;
-        draft.text = 'Synced Immer';
+      store1.setState(state => {
+        state.count = 10;
+        state.text = 'Synced Immer';
       });
 
       await waitFor(() => {

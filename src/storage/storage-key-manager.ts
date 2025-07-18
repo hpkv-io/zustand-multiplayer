@@ -1,4 +1,5 @@
 import { getCacheManager } from '../utils/cache-manager';
+import { PathManager, StatePath } from '../utils/path-manager';
 
 /**
  * Generic storage item interface
@@ -13,7 +14,6 @@ export interface StorageItem<T = unknown> {
  */
 export interface ParsedStorageKey {
   path: string[];
-  isGranular: boolean;
 }
 
 /**
@@ -58,7 +58,7 @@ export class StorageKeyManager {
    * @param storageKey The full storage key
    * @returns Object with path array and granularity information
    */
-  parseStorageKey(storageKey: string): ParsedStorageKey {
+  parseStorageKey(storageKey: string): StatePath {
     const prefix = `${this.namespace}:`;
     let keyToParse = storageKey;
 
@@ -67,9 +67,9 @@ export class StorageKeyManager {
     }
 
     const path = keyToParse.split(':');
-    const isGranular = path.length > 1;
+    const statePath = PathManager.createPath(path);
 
-    return { path, isGranular };
+    return statePath;
   }
 
   /**
