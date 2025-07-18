@@ -1,4 +1,5 @@
 import { Logger } from '../monitoring/logger';
+import { HydrationError } from '../types/multiplayer-types';
 import { normalizeError, getCurrentTimestamp, generateId } from '../utils';
 import { StateChange } from './conflict-resolver';
 
@@ -18,9 +19,10 @@ export class SyncQueueManager<TState> {
       timestamp: getCurrentTimestamp(),
       id: generateId(),
     };
-
+    this.logger.debug(`Adding pending change : ${JSON.stringify(fullChange)}`, {
+      operation: 'sync-queue',
+    });
     this.pendingChanges.push(fullChange);
-    this.logger.debug(`Added pending change: ${fullChange.id}`, { operation: 'sync-queue' });
   }
 
   getPendingChanges(): StateChange<TState>[] {
@@ -28,9 +30,7 @@ export class SyncQueueManager<TState> {
   }
 
   clearPendingChanges(): void {
-    const count = this.pendingChanges.length;
     this.pendingChanges = [];
-    this.logger.debug(`Cleared ${count} pending changes`, { operation: 'sync-queue' });
   }
 
   async processPendingChanges(
@@ -50,14 +50,18 @@ export class SyncQueueManager<TState> {
       this.pendingChanges = [];
 
       for (const change of changesToProcess) {
+        this.logger.debug(`Processing change : ${JSON.stringify(change)}`, {
+          operation: 'sync-queue',
+        });
         await applyStateChange(change.partial, change.replace);
-        // Note: recordStateChange() is called in applyStateChange() to avoid double counting
       }
     } catch (error) {
       this.logger.error('Error processing offline changes', normalizeError(error), {
         operation: 'sync-queue',
       });
-      throw error;
+      throw new HydrationError('Error processing offline changes', {
+        operation: 'sync-queue',
+      });
     } finally {
       this.isProcessing = false;
     }

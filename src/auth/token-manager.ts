@@ -1,8 +1,22 @@
-import { getCurrentTimestamp } from '../utils';
+import { Logger } from '../monitoring/logger';
+import { RetryManager } from '../network/retry';
+import { StorageKeyManager } from '../storage/storage-key-manager';
+import { ConfigurationError, TokenGenerationError } from '../types/multiplayer-types';
+import { getCurrentTimestamp, clearTimeoutSafely, normalizeError } from '../utils';
+import { TokenHelper, TokenResponse } from './token-helper';
 
-/**
- * Secure token storage that prevents memory dumps
- */
+export interface TokenGenerationOptions {
+  namespace: string;
+  apiBaseUrl: string;
+  apiKey?: string;
+  tokenGenerationUrl?: string;
+  subscribedKeys: string[];
+  keyManager: StorageKeyManager;
+  retryManager: RetryManager;
+  logger: Logger;
+  clientId: string;
+}
+
 export class SecureTokenCache {
   private tokenData: { token: string; expiresAt: number } | null = null;
   private isRefreshing: boolean = false;
@@ -32,5 +46,182 @@ export class SecureTokenCache {
 
   getRefreshing(): boolean {
     return this.isRefreshing;
+  }
+}
+
+/**
+ * token manager - handles token generation, caching, and refresh
+ */
+export class TokenManager {
+  private secureTokenCache: SecureTokenCache = new SecureTokenCache();
+  private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private tokenRefreshPromise: Promise<string> | null = null;
+  private options: TokenGenerationOptions;
+  private onTokenRefresh?: () => Promise<void>;
+
+  constructor(options: TokenGenerationOptions) {
+    this.options = options;
+  }
+
+  /**
+   * Sets a callback to be called when token refresh is needed
+   */
+  setTokenRefreshCallback(callback: () => Promise<void>): void {
+    this.onTokenRefresh = callback;
+  }
+
+  /**
+   * Generates a WebSocket token with appropriate access permissions
+   * Thread-safe with race condition protection
+   * @returns Generated token string
+   */
+  async generateToken(): Promise<string> {
+    if (this.secureTokenCache.isValid()) {
+      const cached = this.secureTokenCache.get();
+      return cached!.token;
+    }
+
+    if (this.tokenRefreshPromise) {
+      return this.tokenRefreshPromise;
+    }
+
+    this.secureTokenCache.setRefreshing(true);
+    this.tokenRefreshPromise = this.performTokenGeneration();
+
+    try {
+      const token = await this.tokenRefreshPromise;
+      return token;
+    } finally {
+      this.secureTokenCache.setRefreshing(false);
+      this.tokenRefreshPromise = null;
+    }
+  }
+
+  /**
+   * Performs the actual token generation logic
+   */
+  private async performTokenGeneration(): Promise<string> {
+    this.secureTokenCache.clear();
+    this.clearTokenRefreshTimer();
+
+    let token: string;
+
+    if (this.options.apiKey) {
+      const tokenHelper = new TokenHelper(this.options.apiKey, this.options.apiBaseUrl);
+      const fullSubscribedKeys = this.options.subscribedKeys.map(key =>
+        this.options.keyManager.getFullKey(key),
+      );
+      token = await tokenHelper.generateTokenForStore(this.options.namespace, fullSubscribedKeys);
+    } else if (this.options.tokenGenerationUrl) {
+      token = await this.fetchToken();
+    } else {
+      throw new ConfigurationError('either apiKey or tokenGenerationUrl are required');
+    }
+
+    // Cache token with 2 hour expiry
+    const expiresAt = Date.now() + 2 * 60 * 60 * 1000; // 2 hours
+    this.secureTokenCache.set(token, expiresAt);
+
+    // Schedule refresh at 1h45m (15 minutes before expiry)
+    const refreshAt = expiresAt - 15 * 60 * 1000; // 15 minutes before expiry
+    const refreshDelay = refreshAt - Date.now();
+
+    if (refreshDelay > 0) {
+      this.tokenRefreshTimer = setTimeout(() => {
+        this.refreshToken().catch(error => {
+          this.options.logger.error(
+            'Failed to refresh token automatically',
+            normalizeError(error),
+            {
+              operation: 'token-refresh',
+              clientId: this.options.clientId,
+            },
+          );
+        });
+      }, refreshDelay);
+    }
+
+    return token;
+  }
+
+  /**
+   * Proactively refreshes the token and reconnects if needed
+   * Protected against race conditions
+   */
+  private async refreshToken(): Promise<void> {
+    if (this.secureTokenCache.getRefreshing()) {
+      return;
+    }
+
+    try {
+      // Call the refresh callback if provided
+      if (this.onTokenRefresh) {
+        await this.onTokenRefresh();
+      }
+    } catch (error) {
+      this.options.logger.error('Failed to refresh token and reconnect', normalizeError(error), {
+        operation: 'token-refresh',
+        clientId: this.options.clientId,
+      });
+    }
+  }
+
+  /**
+   * Clears the token refresh timer
+   */
+  private clearTokenRefreshTimer(): void {
+    clearTimeoutSafely(this.tokenRefreshTimer);
+    this.tokenRefreshTimer = null;
+  }
+
+  /**
+   * Fetches token from a custom token generation URL
+   */
+  private async fetchToken(): Promise<string> {
+    return this.options.retryManager.executeWithRetry(async () => {
+      const response = await fetch(this.options.tokenGenerationUrl || '', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          namespace: this.options.namespace,
+          subscribedKeysAndPatterns: this.options.subscribedKeys.map(key =>
+            this.options.keyManager.getFullKey(key),
+          ),
+        }),
+      });
+      if (!response.ok) {
+        throw new TokenGenerationError(
+          `Failed to get token: ${response.status} ${response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as TokenResponse;
+      return data.token;
+    }, 'fetchToken');
+  }
+
+  /**
+   * Clears the token cache and stops refresh timers
+   */
+  clear(): void {
+    this.clearTokenRefreshTimer();
+    this.secureTokenCache.clear();
+  }
+
+  /**
+   * Gets the current token if valid
+   */
+  getCurrentToken(): string | null {
+    if (this.secureTokenCache.isValid()) {
+      const cached = this.secureTokenCache.get();
+      return cached?.token || null;
+    }
+    return null;
+  }
+
+  /**
+   * Checks if a token refresh is currently in progress
+   */
+  isRefreshing(): boolean {
+    return this.secureTokenCache.getRefreshing();
   }
 }

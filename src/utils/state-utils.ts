@@ -1,5 +1,5 @@
 // ============================================================================
-// State Utility Functions - Enhanced with Caching and Path Management
+// State Utility Functions
 // ============================================================================
 
 import type { PropertyPath, SerializableValue, PathExtractable } from '../types/multiplayer-types';
@@ -22,11 +22,6 @@ export function extractPaths<T extends PathExtractable>(
     return cached;
   }
 
-  if (depth > MAX_DEPTH) {
-    console.warn(`Maximum depth of ${MAX_DEPTH} exceeded in extractPaths`);
-    return [];
-  }
-
   const paths: PropertyPath<SerializableValue>[] = [];
   const entries = Object.entries(obj);
 
@@ -40,6 +35,7 @@ export function extractPaths<T extends PathExtractable>(
         paths.push({ path: currentPath, value });
       } else {
         const nestedPaths = extractPaths(value as PathExtractable, currentPath, depth + 1);
+
         paths.push(...nestedPaths);
       }
     } else {
@@ -53,13 +49,11 @@ export function extractPaths<T extends PathExtractable>(
 }
 
 /**
- * Optimized deep equality check with caching
+ *  deep equality check
  */
 export function deepEqual<T = SerializableValue>(a: T, b: T): boolean {
-  // Fast path for reference equality
   if (a === b) return true;
 
-  // Check cache first
   const cacheManager = getCacheManager();
   const cached = cacheManager.deepEqualityCache.get(a, b);
 
@@ -67,26 +61,22 @@ export function deepEqual<T = SerializableValue>(a: T, b: T): boolean {
     return cached;
   }
 
-  // Handle null/undefined cases
   if (a === null || b === null) {
     const result = a === b;
     cacheManager.deepEqualityCache.set(a, b, result);
     return result;
   }
 
-  // Type check - different types are not equal
   if (typeof a !== typeof b) {
     cacheManager.deepEqualityCache.set(a, b, false);
     return false;
   }
 
-  // Primitive types - already checked above
   if (typeof a !== 'object') {
     cacheManager.deepEqualityCache.set(a, b, false);
     return false;
   }
 
-  // Array comparison
   if (Array.isArray(a) !== Array.isArray(b)) {
     cacheManager.deepEqualityCache.set(a, b, false);
     return false;
@@ -192,21 +182,6 @@ export function detectActualChanges<T extends PathExtractable>(
 }
 
 /**
- * Safe path extraction with error handling
- */
-export function safeExtractPaths<T extends PathExtractable>(
-  obj: T,
-  parentPath: string[] = [],
-): PropertyPath<SerializableValue>[] {
-  try {
-    return extractPaths(obj, parentPath);
-  } catch (error) {
-    console.warn('Path extraction failed, returning empty array:', error);
-    return [];
-  }
-}
-
-/**
  * Compare two objects and return only the changed paths
  */
 export function getChangedPaths<T extends PathExtractable>(
@@ -309,7 +284,6 @@ function findDeletedPathsInField(
 
 /**
  * Detect changes between old and new state
- * Enhanced version of logic from multiplayer.ts
  */
 export function detectStateChanges<TState>(oldState: TState, newState: TState): Partial<TState> {
   const changes: Partial<TState> = {};

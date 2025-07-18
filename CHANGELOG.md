@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] 2025-07-18
+
+### Fixed
+
+- Issues with nested property storage
+
 ## [0.4.1] 2025-07-14
 
 ### Changed
@@ -105,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.3.2...v0.4.0
 [0.3.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.3.1...v0.3.2

@@ -34,7 +34,6 @@ type TestState = {
 const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
-  nested: { value: 0 },
   increment: () => set(state => ({ count: state.count + 1 })),
   setText: (text: string) => set({ text }),
 });

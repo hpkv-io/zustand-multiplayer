@@ -6,18 +6,12 @@ import {
   ConnectionState as HPKVConnectionState,
   ConnectionConfig,
 } from '@hpkv/websocket-client';
-import { TokenHelper, TokenResponse } from '../auth/token-helper';
-import { SecureTokenCache } from '../auth/token-manager';
+import { TokenManager } from '../auth/token-manager';
 import { OperationTracker, createOperationTracker } from '../core/operation-tracker';
 import { Logger } from '../monitoring/logger';
 import { BrowserConnectivityManager } from '../network/connectivity-manager';
 import { RetryConfig, RetryManager, createRetryManager } from '../network/retry';
-import {
-  generateClientId,
-  normalizeError,
-  getCurrentTimestamp,
-  clearTimeoutSafely,
-} from '../utils';
+import { generateClientId, normalizeError, getCurrentTimestamp } from '../utils';
 import { ConnectionManager } from './connection-manager';
 import { StorageKeyManager } from './storage-key-manager';
 
@@ -135,24 +129,19 @@ class HPKVStorageImpl implements HPKVStorage {
   private subscriptionId: string | null = null;
   private changeListeners: Set<HPKVChangeListener> = new Set();
   private connectionListeners: Set<HPKVConnectionListener> = new Set();
-  private secureTokenCache: SecureTokenCache = new SecureTokenCache();
+  private tokenManager: TokenManager;
   private readonly subscribedKeys: string[];
   private readonly publishedKeys: string[];
   private readonly clientId: string;
   private logger: Logger;
-  private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupCallbacks: Set<() => void> = new Set();
   private isDestroyed: boolean = false;
-  private tokenRefreshPromise: Promise<string> | null = null;
   private retryManager: RetryManager;
   private storageOptions: HPKVStorageOptions;
   private operationTracker: OperationTracker;
   private connectivityManager: BrowserConnectivityManager;
   private keyManager: StorageKeyManager;
 
-  /**
-   * Gets the current connection status
-   */
   public get isConnected(): boolean {
     return this.connectionManager.isConnected();
   }
@@ -185,22 +174,39 @@ class HPKVStorageImpl implements HPKVStorage {
     this.operationTracker = createOperationTracker();
     this.connectivityManager = new BrowserConnectivityManager();
     this.keyManager = new StorageKeyManager(this.namespace);
+
+    // Initialize token manager
+    this.tokenManager = new TokenManager({
+      namespace: this.namespace,
+      apiBaseUrl: this.storageOptions.apiBaseUrl,
+      apiKey: this.storageOptions.apiKey,
+      tokenGenerationUrl: this.storageOptions.tokenGenerationUrl,
+      subscribedKeys: this.subscribedKeys,
+      keyManager: this.keyManager,
+      retryManager: this.retryManager,
+      logger: this.logger,
+      clientId: this.clientId,
+    });
+
+    this.tokenManager.setTokenRefreshCallback(async () => {
+      if (this.connectionManager.isConnected() && this.client) {
+        await this.client.disconnect();
+        this.client.destroy();
+        this.client = null;
+        this.connectionManager.updateClient(null);
+        this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
+      }
+      await this.ensureConnection();
+    });
+
     this.setupConnectivityHandling();
   }
 
   private setupConnectivityHandling(): void {
     const cleanup = this.connectivityManager.addListener((isOnline: boolean) => {
       if (isOnline) {
-        this.logger.info('Browser back online, attempting to reconnect', {
-          operation: 'connectivity-change',
-          clientId: this.clientId,
-        });
         this.handleBrowserOnline();
       } else {
-        this.logger.info('Browser offline, connection will be paused', {
-          operation: 'connectivity-change',
-          clientId: this.clientId,
-        });
         this.handleBrowserOffline();
       }
     });
@@ -209,7 +215,6 @@ class HPKVStorageImpl implements HPKVStorage {
   }
 
   private handleBrowserOnline(): void {
-    // Attempt to reconnect when browser comes back online
     this.ensureConnection().catch(error => {
       this.logger.error('Failed to reconnect after coming online', normalizeError(error), {
         operation: 'online-reconnect',
@@ -219,19 +224,14 @@ class HPKVStorageImpl implements HPKVStorage {
   }
 
   private handleBrowserOffline(): void {
-    // Update connection state to reflect offline status
     this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
     this.notifyConnectionListeners(HPKVConnectionState.DISCONNECTED);
   }
 
-  /**
-   * Initializes and connects the HPKV client
-   * This will generate a token and create the client with access permissions
-   */
   private async setupClient(): Promise<void> {
     this.checkDestroyed();
     return this.retryManager.executeWithRetry(async () => {
-      const token = await this.generateToken();
+      const token = await this.tokenManager.generateToken();
       this.client = HPKVClientFactory.createSubscriptionClient(
         token,
         this.storageOptions.apiBaseUrl!,
@@ -296,9 +296,6 @@ class HPKVStorageImpl implements HPKVStorage {
     });
   }
 
-  /**
-   * Subscribes to changes from the HPKV server
-   */
   private subscribeToChanges(): void {
     if (!this.client) return;
 
@@ -342,9 +339,6 @@ class HPKVStorageImpl implements HPKVStorage {
     });
   }
 
-  /**
-   * Notifies global listeners
-   */
   private notifyChangeListeners(event: HPKVChangeEvent): void {
     for (const listener of this.changeListeners) {
       try {
@@ -371,11 +365,6 @@ class HPKVStorageImpl implements HPKVStorage {
     }
   }
 
-  /**
-   * Adds a global listener for all changes
-   * @param listener The listener function
-   * @returns A function to remove the listener
-   */
   public addChangeListener(listener: HPKVChangeListener): () => void {
     this.changeListeners.add(listener);
 
@@ -391,150 +380,9 @@ class HPKVStorageImpl implements HPKVStorage {
     };
   }
 
-  /**
-   * Generates a WebSocket token with appropriate access permissions
-   * Thread-safe with race condition protection
-   * @returns Generated token string
-   */
-  private async generateToken(): Promise<string> {
-    if (this.secureTokenCache.isValid()) {
-      const cached = this.secureTokenCache.get();
-      return cached!.token;
-    }
-
-    if (this.tokenRefreshPromise) {
-      return this.tokenRefreshPromise;
-    }
-
-    this.secureTokenCache.setRefreshing(true);
-    this.tokenRefreshPromise = this.performTokenGeneration();
-
-    try {
-      const token = await this.tokenRefreshPromise;
-      return token;
-    } finally {
-      this.secureTokenCache.setRefreshing(false);
-      this.tokenRefreshPromise = null;
-    }
-  }
-
-  private async performTokenGeneration(): Promise<string> {
-    this.secureTokenCache.clear();
-    this.clearTokenRefreshTimer();
-
-    let token: string;
-
-    if (this.storageOptions.apiKey) {
-      const tokenHelper = new TokenHelper(
-        this.storageOptions.apiKey,
-        this.storageOptions.apiBaseUrl,
-      );
-      const fullSubscribedKeys = this.subscribedKeys.map(key => this.keyManager.getFullKey(key));
-
-      token = await tokenHelper.generateTokenForStore(this.namespace, fullSubscribedKeys);
-    } else if (this.storageOptions.tokenGenerationUrl) {
-      token = await this.fetchToken();
-    } else {
-      throw new Error('either apiKey or tokenGenerationUrl are required');
-    }
-
-    // Cache token with 2 hour expiry
-    const expiresAt = Date.now() + 2 * 60 * 60 * 1000; // 2 hours
-    this.secureTokenCache.set(token, expiresAt);
-
-    // Schedule refresh at 1h45m (15 minutes before expiry)
-    const refreshAt = expiresAt - 15 * 60 * 1000; // 15 minutes before expiry
-    const refreshDelay = refreshAt - Date.now();
-
-    if (refreshDelay > 0) {
-      this.tokenRefreshTimer = setTimeout(() => {
-        this.refreshToken().catch(error => {
-          this.logger.error('Failed to refresh token automatically', normalizeError(error), {
-            operation: 'token-refresh',
-            clientId: this.clientId,
-          });
-        });
-      }, refreshDelay);
-    }
-
-    return token;
-  }
-
-  /**
-   * Proactively refreshes the token and reconnects if needed
-   * Protected against race conditions
-   */
-  private async refreshToken(): Promise<void> {
-    // Check if refresh is already in progress
-    if (this.secureTokenCache.getRefreshing()) {
-      this.logger.debug('Token refresh already in progress, skipping', {
-        operation: 'token-refresh',
-        clientId: this.clientId,
-      });
-      return;
-    }
-
-    this.logger.info('Refreshing token proactively', {
-      operation: 'token-refresh',
-      clientId: this.clientId,
-    });
-
-    try {
-      // If connected, disconnect and reconnect with new token
-      if (this.connectionManager.isConnected() && this.client) {
-        await this.client.disconnect();
-        this.client.destroy();
-        this.client = null;
-        this.connectionManager.updateClient(null);
-        this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
-      }
-
-      // Reconnect with new token
-      await this.ensureConnection();
-    } catch (error) {
-      this.logger.error('Failed to refresh token and reconnect', normalizeError(error), {
-        operation: 'token-refresh',
-        clientId: this.clientId,
-      });
-    }
-  }
-
-  /**
-   * Clears the token refresh timer
-   */
-  private clearTokenRefreshTimer(): void {
-    clearTimeoutSafely(this.tokenRefreshTimer);
-    this.tokenRefreshTimer = null;
-  }
-
-  private async fetchToken(): Promise<string> {
-    return this.retryManager.executeWithRetry(async () => {
-      const response = await fetch(this.storageOptions.tokenGenerationUrl || '', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          namespace: this.namespace,
-          subscribedKeysAndPatterns: this.subscribedKeys.map(key =>
-            this.keyManager.getFullKey(key),
-          ),
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to get token: ${response.status} ${response.statusText}`);
-      }
-      const data = (await response.json()) as TokenResponse;
-      return data.token;
-    }, 'fetchToken');
-  }
-
-  /**
-   * Enhanced ensureConnection that respects browser offline state
-   */
   async ensureConnection(): Promise<void> {
     this.checkDestroyed();
 
-    // In Node.js environment or when browser is offline, still attempt connection
-    // but log a warning if browser is offline
     if (!this.connectivityManager.getIsOnline()) {
       this.logger.warn('Attempting to connect while browser appears offline', {
         operation: 'ensureConnection',
@@ -583,11 +431,6 @@ class HPKVStorageImpl implements HPKVStorage {
     return this.connectionPromise;
   }
 
-  /**
-   * Waits for all running operations to complete with a timeout
-   * @param timeoutMs Maximum time to wait in milliseconds
-   * @returns Promise that resolves when all operations are done or timeout is reached
-   */
   private async waitForOperations(timeoutMs: number = 5000): Promise<void> {
     await this.operationTracker.waitForOperations(timeoutMs);
   }
@@ -595,7 +438,6 @@ class HPKVStorageImpl implements HPKVStorage {
   async getAllItems(): Promise<Map<string, unknown>> {
     this.checkDestroyed();
     const operation = async (): Promise<Map<string, unknown>> => {
-      await this.ensureConnection();
       return this.retryManager.executeWithRetry(async () => {
         const range = this.keyManager.getNamespaceRange();
         let allRecords: any[] = [];
@@ -604,7 +446,7 @@ class HPKVStorageImpl implements HPKVStorage {
 
         // Keep fetching until all keys are retrieved
         while (hasMore) {
-          const batchResult = await this.client?.range(currentStart, range.end, { limit: 500 });
+          const batchResult = await this.client?.range(currentStart, range.end, { limit: 100 });
 
           if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
             hasMore = false;
@@ -652,8 +494,6 @@ class HPKVStorageImpl implements HPKVStorage {
         return Promise.resolve();
       }
 
-      await this.ensureConnection();
-
       const fullKey = this.keyManager.ensureNamespacePrefix(key);
       const valueToStore: StoredValue = {
         value,
@@ -679,10 +519,13 @@ class HPKVStorageImpl implements HPKVStorage {
   async removeItem(key: string): Promise<void> {
     this.checkDestroyed();
     const operation = async (): Promise<void> => {
-      await this.ensureConnection();
       return this.retryManager.executeWithRetry(async () => {
         const fullKey = this.keyManager.ensureNamespacePrefix(key);
         await this.client?.delete(fullKey);
+        this.logger.debug(`Removed item from storage. key: ${fullKey}`, {
+          operation: 'removeItem',
+          clientId: this.clientId,
+        });
       }, `removeItem-${key}`);
     };
 
@@ -698,7 +541,7 @@ class HPKVStorageImpl implements HPKVStorage {
       let hasMore = true;
 
       while (hasMore) {
-        const batchResult = await this.client?.range(currentStart, range.end, { limit: 500 });
+        const batchResult = await this.client?.range(currentStart, range.end, { limit: 100 });
 
         if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
           hasMore = false;
@@ -724,7 +567,7 @@ class HPKVStorageImpl implements HPKVStorage {
   }
 
   async close(): Promise<void> {
-    this.clearTokenRefreshTimer();
+    this.tokenManager.clear();
 
     await this.waitForOperations();
     if (this.connectionManager.isConnected() && this.client) {
@@ -740,8 +583,6 @@ class HPKVStorageImpl implements HPKVStorage {
       this.client = null;
       this.connectionManager.updateClient(null);
       this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
-
-      this.secureTokenCache.clear();
     }
   }
 
@@ -794,28 +635,6 @@ class HPKVStorageImpl implements HPKVStorage {
     if (this.isDestroyed) {
       throw new Error('HPKVStorage instance has been destroyed');
     }
-  }
-
-  /**
-   * Re-establishes connection listeners after reconnection
-   * This ensures that when user calls disconnect and then connect,
-   * the connection status and change listeners are attached again
-   */
-  async reconnect(): Promise<void> {
-    this.checkDestroyed();
-
-    if (this.client) {
-      await this.client.disconnect();
-      this.client.destroy();
-      this.client = null;
-      this.connectionManager.updateClient(null);
-    }
-
-    this.connecting = false;
-    this.connectionPromise = null;
-    this.connectionManager.updateConnectionState(HPKVConnectionState.DISCONNECTED);
-
-    await this.ensureConnection();
   }
 }
 

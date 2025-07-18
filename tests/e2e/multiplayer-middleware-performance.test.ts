@@ -48,11 +48,11 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
       data: { ...state.data, [key]: value },
     })),
   batchUpdate: () =>
-    set(state => ({
-      count: state.count + 1,
-      text: `Updated ${Date.now()}`,
-      data: { ...state.data, timestamp: Date.now() },
-    })),
+    set(state => {
+      state.count = state.count + 1;
+      state.text = `Updated ${Date.now()}`;
+      state.data = { ...state.data, timestamp: Date.now() };
+    }),
 });
 
 const storeCreator = new StoreCreator();

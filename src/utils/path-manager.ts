@@ -1,14 +1,5 @@
-import {
-  PATH_SEPARATOR,
-  DISPLAY_PATH_SEPARATOR,
-  MULTIPLAYER_FIELD as MULTIPLAYER_STATE_KEY,
-  MAX_DEPTH,
-} from './constants';
+import { PATH_SEPARATOR, MULTIPLAYER_FIELD as MULTIPLAYER_STATE_KEY, MAX_DEPTH } from './constants';
 import { isPlainObject } from './index';
-
-// ============================================================================
-// TYPE DEFINITIONS
-// ============================================================================
 
 /**
  * Represents a path in the state tree
@@ -29,22 +20,6 @@ export interface PathNavigationResult<T = unknown> {
   key?: string;
 }
 
-/**
- * Path building configuration
- */
-export interface PathBuildConfig {
-  skipMultiplayerPrefix?: boolean;
-  useDisplaySeparator?: boolean;
-}
-
-// ============================================================================
-// CORE PATH UTILITIES
-// ============================================================================
-
-/**
- * Centralized path management utility
- * Consolidates all path operations from different files
- */
 export class PathManager {
   private static readonly EMPTY_PATH: StatePath = { segments: [], depth: 0, isNested: false };
 
@@ -70,30 +45,10 @@ export class PathManager {
   }
 
   /**
-   * Convert StatePath to string
+   * Create a StatePath from an array of segments
    */
-  static toString(path: StatePath, config?: PathBuildConfig): string {
-    if (path.segments.length === 0) return '';
-
-    const separator = config?.useDisplaySeparator ? DISPLAY_PATH_SEPARATOR : PATH_SEPARATOR;
-    return path.segments.join(separator);
-  }
-
-  /**
-   * Join path segments into a single path
-   */
-  static join(...segments: (string | StatePath)[]): StatePath {
-    const allSegments: string[] = [];
-
-    for (const segment of segments) {
-      if (typeof segment === 'string') {
-        allSegments.push(segment);
-      } else {
-        allSegments.push(...segment.segments);
-      }
-    }
-
-    return PathManager.createPath(allSegments);
+  static fromArray(pathArray: string[]): StatePath {
+    return PathManager.createPath(pathArray);
   }
 
   /**
@@ -103,36 +58,6 @@ export class PathManager {
     if (path.segments.length <= 1) return PathManager.EMPTY_PATH;
 
     return PathManager.createPath(path.segments.slice(0, -1));
-  }
-
-  /**
-   * Get the last segment of a path
-   */
-  static getLastSegment(path: StatePath): string | undefined {
-    return path.segments[path.segments.length - 1];
-  }
-
-  /**
-   * Get the first segment of a path
-   */
-  static getFirstSegment(path: StatePath): string | undefined {
-    return path.segments[0];
-  }
-
-  /**
-   * Check if path starts with given prefix
-   */
-  static startsWith(path: StatePath, prefix: StatePath): boolean {
-    if (prefix.segments.length > path.segments.length) return false;
-
-    return prefix.segments.every((segment, index) => path.segments[index] === segment);
-  }
-
-  /**
-   * Check if path is a subpath of another path
-   */
-  static isSubPath(child: StatePath, parent: StatePath): boolean {
-    return PathManager.startsWith(child, parent) && child.segments.length > parent.segments.length;
   }
 
   /**
@@ -191,14 +116,6 @@ export class PathManager {
   }
 
   /**
-   * Get value at path in object
-   */
-  static getValue<T = unknown>(obj: Record<string, unknown>, path: StatePath): T | undefined {
-    const result = PathManager.navigate<T>(obj, path);
-    return result.found ? result.value : undefined;
-  }
-
-  /**
    * Set value at path in object (creates nested structure if needed)
    */
   static setValue(obj: Record<string, unknown>, path: StatePath, value: unknown): void {
@@ -217,23 +134,8 @@ export class PathManager {
       current = current[segment] as Record<string, unknown>;
     }
 
-    // Set the final value
     const lastSegment = path.segments[path.segments.length - 1];
     current[lastSegment] = value;
-  }
-
-  /**
-   * Delete value at path in object
-   */
-  static deleteValue(obj: Record<string, unknown>, path: StatePath): boolean {
-    const result = PathManager.navigate(obj, path);
-
-    if (result.found && result.parent && result.key) {
-      delete result.parent[result.key];
-      return true;
-    }
-
-    return false;
   }
 
   /**
@@ -327,7 +229,7 @@ export class PathManager {
   ): void {
     const lastSegment = path.segments[path.segments.length - 1];
 
-    if (path.depth >= 3) {
+    if (path.depth >= MAX_DEPTH) {
       PathManager.handleNestedDeletion(path, current, stateUpdate, currentState);
     } else if (path.depth === 1) {
       PathManager.handleTopLevelDeletion(path, stateUpdate, initialState);
@@ -337,7 +239,7 @@ export class PathManager {
   }
 
   /**
-   * Handle deletion of nested objects (depth >= 3)
+   * Handle deletion of nested objects (depth >= MAX_DEPTH)
    */
   private static handleNestedDeletion(
     path: StatePath,
@@ -348,7 +250,7 @@ export class PathManager {
     const lastSegment = path.segments[path.segments.length - 1];
     delete current[lastSegment];
 
-    if (path.depth >= 3 && currentState) {
+    if (path.depth >= MAX_DEPTH && currentState) {
       const parentPath = PathManager.getParent(path);
 
       const parentResult = PathManager.navigate(currentState, parentPath);
@@ -417,71 +319,8 @@ export class PathManager {
     );
   }
 
-  // ============================================================================
-  // VALIDATION AND UTILITIES
-  // ============================================================================
-
-  /**
-   * Validate that a path doesn't exceed maximum depth
-   */
-  static validateDepth(path: StatePath): boolean {
-    return path.depth <= MAX_DEPTH;
-  }
-
-  /**
-   * Sanitize path segments (remove empty strings, trim whitespace)
-   */
-  static sanitize(path: StatePath): StatePath {
-    const sanitizedSegments = path.segments
-      .map(segment => segment.trim())
-      .filter(segment => segment.length > 0);
-
-    return PathManager.createPath(sanitizedSegments);
-  }
-
-  /**
-   * Check if a path is safe for storage operations
-   */
-  static isSafeForStorage(path: StatePath): boolean {
-    return (
-      PathManager.validateDepth(path) &&
-      path.segments.every(
-        segment =>
-          segment.length > 0 && !segment.includes('\0') && segment !== '..' && segment !== '.',
-      )
-    );
-  }
-
-  /**
-   * Get all possible parent paths for a given path
-   */
-  static getParentPaths(path: StatePath): StatePath[] {
-    const parents: StatePath[] = [];
-
-    for (let i = 1; i < path.segments.length; i++) {
-      parents.push(PathManager.createPath(path.segments.slice(0, i)));
-    }
-
-    return parents;
-  }
-
-  /**
-   * Get the root segment of a path
-   */
-  static getRoot(path: StatePath): string | undefined {
-    return path.segments[0];
-  }
-
-  /**
-   * Check if path represents a leaf node (no further nesting expected)
-   */
-  static isLeafPath(path: StatePath): boolean {
-    return path.depth >= MAX_DEPTH;
-  }
-
   /**
    * Recursively clean up empty objects from a state update
-   * Moved from multiplayer-orchestrator to centralize cleanup logic
    * Preserves top-level properties as empty objects to maintain state structure
    */
   static cleanupEmptyObjects(
@@ -515,44 +354,6 @@ export class PathManager {
       }
     }
 
-    // For top-level, always return the cleaned object (even if empty)
-    // For nested levels, only return if it has content
     return isTopLevel || hasNonEmptyValues ? cleaned : {};
   }
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Convert legacy path array to StatePath
- */
-export function fromLegacyPath(pathArray: string[]): StatePath {
-  return PathManager.createPath(pathArray);
-}
-
-/**
- * Convert StatePath to legacy path array
- */
-export function toLegacyPath(path: StatePath): string[] {
-  return [...path.segments];
-}
-
-/**
- * Batch process multiple paths
- */
-export function batchProcessPaths<T>(paths: StatePath[], processor: (path: StatePath) => T): T[] {
-  return paths.map(processor);
-}
-
-/**
- * Filter paths by depth
- */
-export function filterPathsByDepth(
-  paths: StatePath[],
-  minDepth: number = 0,
-  maxDepth: number = MAX_DEPTH,
-): StatePath[] {
-  return paths.filter(path => path.depth >= minDepth && path.depth <= maxDepth);
 }
