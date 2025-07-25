@@ -84,12 +84,17 @@ function processImmerFunctionUpdate<TState>(
   getCurrentState: () => TState,
   orchestrator: MultiplayerOrchestrator<TState>,
   replace?: boolean,
+  zFactor: number = 2,
 ): void {
   const oldState = getCurrentState();
   const newState = produce(oldState, func);
 
   const changes = detectStateChanges(oldState, newState);
-  const deletions = detectStateDeletions(oldState as PathExtractable, newState as PathExtractable);
+  const deletions = detectStateDeletions(
+    oldState as PathExtractable,
+    newState as PathExtractable,
+    zFactor,
+  );
 
   orchestrator.handleStateChangeRequest({ changes, deletions }, replace);
 }
@@ -101,6 +106,8 @@ function createDefaultSyncOptions<TState>(
   options: MultiplayerOptions<TState>,
   nonFunctionKeys: Array<keyof TState>,
 ): MultiplayerOptions<TState> {
+  const zFactor = options.zFactor !== undefined ? Math.min(Math.max(0, options.zFactor), 10) : 2;
+
   return {
     subscribeToUpdatesFor: () => nonFunctionKeys,
     publishUpdatesFor: () => nonFunctionKeys,
@@ -111,6 +118,7 @@ function createDefaultSyncOptions<TState>(
     retryConfig: createDefaultRetryConfig(),
     profiling: false,
     ...options,
+    zFactor: zFactor,
   };
 }
 
@@ -203,6 +211,7 @@ const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
           () => get() as TState,
           orchestrator,
           replace,
+          syncOptions.zFactor ?? 2,
         );
       } else {
         orchestrator.handleStateChangeRequest(partial as StateUpdateFunction<TState>, replace);

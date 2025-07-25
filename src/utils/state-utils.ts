@@ -4,7 +4,6 @@
 
 import type { PropertyPath, SerializableValue, PathExtractable } from '../types/multiplayer-types';
 import { getCacheManager } from './cache-manager';
-import { MAX_DEPTH } from './constants';
 import { isPlainObject, isPrimitive } from './index';
 
 /**
@@ -14,6 +13,7 @@ export function extractPaths<T extends PathExtractable>(
   obj: T,
   parentPath: string[] = [],
   depth: number = 0,
+  maxDepth: number = 2,
 ): PropertyPath<SerializableValue>[] {
   const cacheManager = getCacheManager();
   const cached = cacheManager.pathExtractionCache.get(obj as any, parentPath);
@@ -28,13 +28,21 @@ export function extractPaths<T extends PathExtractable>(
   for (const [key, value] of entries) {
     const currentPath = [...parentPath, key];
 
-    if (isPrimitive(value) || Array.isArray(value)) {
+    // When maxDepth is 0, only store top-level keys, no path extraction
+    if (maxDepth === 0) {
+      paths.push({ path: currentPath, value });
+    } else if (isPrimitive(value) || Array.isArray(value)) {
       paths.push({ path: currentPath, value });
     } else if (isPlainObject(value)) {
-      if (depth >= MAX_DEPTH) {
+      if (depth >= maxDepth) {
         paths.push({ path: currentPath, value });
       } else {
-        const nestedPaths = extractPaths(value as PathExtractable, currentPath, depth + 1);
+        const nestedPaths = extractPaths(
+          value as PathExtractable,
+          currentPath,
+          depth + 1,
+          maxDepth,
+        );
 
         paths.push(...nestedPaths);
       }
@@ -128,6 +136,7 @@ export function detectActualChanges<T extends PathExtractable>(
   oldState: T,
   newState: T,
   parentPath: string[] = [],
+  maxDepth: number = 2,
 ): PropertyPath<SerializableValue>[] {
   const changes: PropertyPath<SerializableValue>[] = [];
 
@@ -140,16 +149,45 @@ export function detectActualChanges<T extends PathExtractable>(
   }
 
   if (!oldState && newState) {
-    return extractPaths(newState, parentPath);
+    return extractPaths(newState, parentPath, 0, maxDepth);
   }
 
   if (oldState && !newState) {
-    const oldPaths = extractPaths(oldState, parentPath);
+    const oldPaths = extractPaths(oldState, parentPath, 0, maxDepth);
     return oldPaths.map(({ path }) => ({ path, value: undefined }));
   }
 
-  const oldPaths = extractPaths(oldState, parentPath);
-  const newPaths = extractPaths(newState, parentPath);
+  // Special handling for maxDepth = 0
+  if (maxDepth === 0) {
+    // For zFactor=0, we store entire top-level objects if any nested value changed
+    const topLevelChanges: PropertyPath<SerializableValue>[] = [];
+    const entries = Object.entries(newState);
+
+    for (const [key, value] of entries) {
+      const oldValue = oldState[key as keyof T];
+      if (!deepEqual(oldValue as unknown, value as unknown)) {
+        topLevelChanges.push({
+          path: [...parentPath, key],
+          value: value as SerializableValue,
+        });
+      }
+    }
+
+    // Check for deletions
+    for (const key of Object.keys(oldState)) {
+      if (!(key in newState)) {
+        topLevelChanges.push({
+          path: [...parentPath, key],
+          value: undefined,
+        });
+      }
+    }
+
+    return topLevelChanges;
+  }
+
+  const oldPaths = extractPaths(oldState, parentPath, 0, maxDepth);
+  const newPaths = extractPaths(newState, parentPath, 0, maxDepth);
 
   const oldPathMap = new Map<string, SerializableValue>();
   const newPathMap = new Map<string, SerializableValue>();
@@ -162,23 +200,35 @@ export function detectActualChanges<T extends PathExtractable>(
     newPathMap.set(path.join('.'), value);
   });
 
+  const actualChanges: PropertyPath<SerializableValue>[] = [];
+
   for (const { path, value } of newPaths) {
     const pathKey = path.join('.');
     const oldValue = oldPathMap.get(pathKey);
 
     if (oldValue === undefined || !deepEqual(oldValue, value)) {
-      changes.push({ path, value });
+      // Calculate the depth of this path
+      const depth = path.length - parentPath.length - 1;
+
+      // With zFactor > 0, skip parent objects at depths less than zFactor
+      // But always include leaf values (primitives and arrays)
+      if (isPlainObject(value) && !Array.isArray(value) && depth < maxDepth) {
+        // This is a parent object at a depth less than maxDepth, skip it
+        continue;
+      }
+
+      actualChanges.push({ path, value });
     }
   }
 
   for (const { path } of oldPaths) {
     const pathKey = path.join('.');
     if (!newPathMap.has(pathKey)) {
-      changes.push({ path, value: undefined });
+      actualChanges.push({ path, value: undefined });
     }
   }
 
-  return changes;
+  return actualChanges;
 }
 
 /**
@@ -233,6 +283,7 @@ export function getChangedPaths<T extends PathExtractable>(
 export function detectStateDeletions<TState extends PathExtractable>(
   oldState: TState,
   newState: TState,
+  maxDepth: number = 2,
 ): Array<{ path: string[] }> {
   const deletions: Array<{ path: string[] }> = [];
 
@@ -245,7 +296,7 @@ export function detectStateDeletions<TState extends PathExtractable>(
       const oldFieldValue = (oldState as Record<string, unknown>)[field];
 
       if (isPlainObject(oldFieldValue)) {
-        const fieldDeletions = findDeletedPathsInField(oldFieldValue, newValue, field);
+        const fieldDeletions = findDeletedPathsInField(oldFieldValue, newValue, field, maxDepth);
         deletions.push(...fieldDeletions);
       }
     }
@@ -261,9 +312,10 @@ function findDeletedPathsInField(
   oldValue: Record<string, unknown>,
   newValue: Record<string, unknown>,
   fieldName: string,
+  maxDepth: number = 2,
 ): Array<{ path: string[] }> {
-  const oldPaths = extractPaths({ [fieldName]: oldValue } as PathExtractable);
-  const newPaths = extractPaths({ [fieldName]: newValue } as PathExtractable);
+  const oldPaths = extractPaths({ [fieldName]: oldValue } as PathExtractable, [], 0, maxDepth);
+  const newPaths = extractPaths({ [fieldName]: newValue } as PathExtractable, [], 0, maxDepth);
 
   const oldPathSet = new Set(oldPaths.map(p => p.path.join('.')));
   const newPathSet = new Set(newPaths.map(p => p.path.join('.')));

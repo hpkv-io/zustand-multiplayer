@@ -394,7 +394,14 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     startKey: string,
     endKey: string,
     options?: RangeQueryOptions,
-  ): Promise<HPKVResponse> {
+  ): Promise<{
+    code: number;
+    success?: boolean;
+    records?: Array<{ key: string; value: string }>;
+    count?: number;
+    truncated?: boolean;
+    error?: string;
+  }> {
     if (this.shouldFailOperations) {
       return { code: 500, error: 'Simulated failure' };
     }
@@ -406,35 +413,57 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
-    const records: Array<{ key: string; value: string }> = [];
-    const limit = options?.limit || 1000;
-
-    // Get all keys in range
     const sortedKeys = Array.from(globalHPKVStore.keys()).sort();
+    const keysInRange = sortedKeys.filter(key => key >= startKey && key < endKey);
 
-    for (const key of sortedKeys) {
-      if (key >= startKey && key < endKey) {
-        // Check access permission
-        if (matchesAccessPattern(key, this.tokenInfo.accessPattern)) {
-          records.push({
-            key,
-            value: globalHPKVStore.get(key)!,
-          });
+    // Filter by access pattern
+    const allowedKeys = keysInRange.filter(key =>
+      matchesAccessPattern(key, this.tokenInfo.accessPattern),
+    );
 
-          if (records.length >= limit) {
-            break;
-          }
-        }
-      }
-    }
+    const limit = options?.limit || 1000;
+    const results = allowedKeys.slice(0, limit).map(key => ({
+      key,
+      value: globalHPKVStore.get(key)!,
+    }));
 
     return {
       code: 200,
       success: true,
-      records,
-      count: records.length,
-      truncated: records.length >= limit,
+      records: results,
+      count: results.length,
+      truncated: allowedKeys.length > limit,
     };
+  }
+
+  async clear(): Promise<void> {
+    if (this.shouldFailOperations) {
+      throw new Error('Simulated failure');
+    }
+
+    if (!this.connected) {
+      throw new Error('Not connected');
+    }
+
+    // Extract namespace from access pattern
+    // The access pattern typically includes the namespace as a prefix
+    // For example: "test-namespace-.*" or "my-app-.*"
+    const pattern = this.tokenInfo.accessPattern || '.*';
+
+    // Find all keys that match the access pattern
+    const keysToDelete: string[] = [];
+    for (const key of globalHPKVStore.keys()) {
+      if (matchesAccessPattern(key, pattern)) {
+        keysToDelete.push(key);
+      }
+    }
+
+    // Delete all matching keys
+    for (const key of keysToDelete) {
+      globalHPKVStore.delete(key);
+      // Broadcast deletion to other clients
+      broadcastChange(key, null, this.clientId);
+    }
   }
 
   getConnectionStats(): ConnectionStats {

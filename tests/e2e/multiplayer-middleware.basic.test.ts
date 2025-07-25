@@ -42,17 +42,29 @@ type TestState = {
   text: string;
   nested: {
     value: number;
+    nested2: {
+      value: number;
+      nested3: {
+        value: number;
+      };
+    };
   };
+  todos: Record<string, { id: string; title: string; completed: boolean }>;
   increment: () => void;
   decrement: () => void;
   setText: (text: string) => void;
   updateNested: (value: number) => void;
+  updateNested2: (value: number) => void;
+  updateNested3: (value: number) => void;
+  addTodo: (title: string) => void;
+  removeTodo: (title: string) => void;
 };
 
 const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
   count: 0,
   text: '',
-  nested: { value: 0 },
+  nested: { value: 0, nested2: { value: 0, nested3: { value: 0 } } },
+  todos: {},
   increment: () => set(state => ({ count: state.count + 1 })),
   decrement: () => set(state => ({ count: state.count - 1 })),
   setText: (text: string) =>
@@ -62,6 +74,22 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
   updateNested: (value: number) =>
     set(state => {
       state.nested.value = value;
+    }),
+  updateNested2: (value: number) =>
+    set(state => {
+      state.nested.nested2.value = value;
+    }),
+  updateNested3: (value: number) =>
+    set(state => {
+      state.nested.nested2.nested3.value = value;
+    }),
+  addTodo: (title: string) =>
+    set(state => {
+      state.todos[title] = { id: title, title, completed: false };
+    }),
+  removeTodo: (title: string) =>
+    set(state => {
+      delete state.todos[title];
     }),
 });
 
@@ -435,6 +463,168 @@ describe('Multiplayer Middleware Basic Tests', () => {
       await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
       await expect(client.get(`${uniqueNamespace}:text`)).resolves.toHaveProperty('code', 404);
       await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+    });
+  });
+
+  describe('zFactor Tests', () => {
+    it('should handle zFactor 0 correctly', async () => {
+      const uniqueNamespace = createUniqueStoreName('z-factor-0-test');
+
+      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 0 });
+
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      store.getState().updateNested(25);
+      store.getState().addTodo('Test');
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+
+      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}:todos:Test`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+    });
+
+    it('should handle zFactor 1 correctly', async () => {
+      const uniqueNamespace = createUniqueStoreName('z-factor-1-test');
+      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 1 });
+
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+
+      store.getState().updateNested(25);
+      store.getState().updateNested2(25);
+      store.getState().addTodo('Test');
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2:value`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+    });
+
+    it('should handle zFactor 2 correctly', async () => {
+      const uniqueNamespace = createUniqueStoreName('z-factor-2-test');
+
+      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 2 });
+
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+
+      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+
+      store.getState().updateNested(25);
+      store.getState().updateNested2(25);
+      store.getState().updateNested3(25);
+      store.getState().addTodo('Test');
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2:value`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test:id`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test:title`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test:completed`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+    });
+
+    it('should handle zFactor 3 correctly', async () => {
+      const uniqueNamespace = createUniqueStoreName('z-factor-3-test');
+      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 3 });
+
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+
+      store.getState().updateNested(25);
+      store.getState().updateNested2(25);
+      store.getState().updateNested3(25);
+      store.getState().addTodo('Test');
+      store.getState().addTodo('Test2');
+      store.getState().removeTodo('Test2');
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2:value`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:nested:nested2:nested3`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(
+        client.get(`${uniqueNamespace}:nested:nested2:nested3:value`),
+      ).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}:todos:Test:id`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test:title`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test:completed`)).resolves.toHaveProperty(
+        'code',
+        200,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test2:id`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test2:title`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}:todos:Test2:completed`)).resolves.toHaveProperty(
         'code',
         404,
       );

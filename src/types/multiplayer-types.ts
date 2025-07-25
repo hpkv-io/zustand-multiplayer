@@ -29,6 +29,7 @@ export interface MultiplayerOptions<TState> {
   profiling?: boolean;
   retryConfig?: RetryConfig;
   clientConfig?: ConnectionConfig;
+  zFactor?: number;
 }
 
 export interface MultiplayerState {

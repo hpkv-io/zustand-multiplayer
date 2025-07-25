@@ -1,4 +1,4 @@
-import { PATH_SEPARATOR, MULTIPLAYER_FIELD as MULTIPLAYER_STATE_KEY, MAX_DEPTH } from './constants';
+import { PATH_SEPARATOR, MULTIPLAYER_FIELD as MULTIPLAYER_STATE_KEY } from './constants';
 import { isPlainObject } from './index';
 
 /**
@@ -188,6 +188,7 @@ export class PathManager {
     path: StatePath,
     currentState: Record<string, unknown>,
     initialState?: Record<string, unknown>,
+    maxDepth: number = 2,
   ): Record<string, unknown> {
     const pathExists = PathManager.hasPath(currentState, path);
     if (!pathExists) {
@@ -212,7 +213,7 @@ export class PathManager {
       currentStateTraversal = currentStateTraversal?.[segment] as Record<string, unknown>;
     }
 
-    PathManager.processDeletion(path, current, update, initialState, currentState);
+    PathManager.processDeletion(path, current, update, initialState, currentState, maxDepth);
 
     return update;
   }
@@ -226,11 +227,12 @@ export class PathManager {
     stateUpdate: Record<string, unknown>,
     initialState?: Record<string, unknown>,
     currentState?: Record<string, unknown>,
+    maxDepth: number = 2,
   ): void {
     const lastSegment = path.segments[path.segments.length - 1];
 
-    if (path.depth >= MAX_DEPTH) {
-      PathManager.handleNestedDeletion(path, current, stateUpdate, currentState);
+    if (path.depth >= maxDepth) {
+      PathManager.handleNestedDeletion(path, current, stateUpdate, currentState, maxDepth);
     } else if (path.depth === 1) {
       PathManager.handleTopLevelDeletion(path, stateUpdate, initialState);
     } else {
@@ -246,11 +248,12 @@ export class PathManager {
     current: Record<string, unknown>,
     stateUpdate: Record<string, unknown>,
     currentState?: Record<string, unknown>,
+    maxDepth: number = 2,
   ): void {
     const lastSegment = path.segments[path.segments.length - 1];
     delete current[lastSegment];
 
-    if (path.depth >= MAX_DEPTH && currentState) {
+    if (path.depth >= maxDepth && currentState) {
       const parentPath = PathManager.getParent(path);
 
       const parentResult = PathManager.navigate(currentState, parentPath);
