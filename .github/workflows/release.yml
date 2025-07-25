@@ -30,6 +30,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify build outputs
+        run: npm run verify-build
+
+      - name: Check package files
+        run: |
+          echo "📦 Files to be published:"
+          npm pack --dry-run
+          echo ""
+          echo "📊 Package size: $(npm pack --dry-run 2>&1 | grep 'npm notice' | grep -oE '[0-9.]+ [kM]B')"
+
       - name: Publish to npm
         run: npm publish --access public
         env:

@@ -34,3 +34,14 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify build outputs
+        run: npm run verify-build
+
+      - name: Check bundle size
+        run: |
+          echo "📦 Bundle sizes:"
+          echo "CommonJS: $(du -h dist/index.js | cut -f1)"
+          echo "ES Module: $(du -h dist/index.mjs | cut -f1)"
+          echo "Min CommonJS: $(du -h dist/index.min.js | cut -f1)"
+          echo "Min ES Module: $(du -h dist/index.min.mjs | cut -f1)"

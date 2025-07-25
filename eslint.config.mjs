@@ -12,7 +12,7 @@ import globals from 'globals';
 export default [
   // Basic ignores
   {
-    ignores: ['dist/', 'examples/', 'node_modules/', 'tests/'],
+    ignores: ['dist/', 'examples/', 'node_modules/', 'tests/', 'scripts/'],
   },
 
   // Base JS config

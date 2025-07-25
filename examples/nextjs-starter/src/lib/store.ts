@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { LogLevel, multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
+import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
 
 interface Todo {
   id: string;

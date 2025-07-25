@@ -1,17 +1,30 @@
 {
   "name": "@hpkv/zustand-multiplayer",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "A multiplayer middleware for Zustand using HPKV",
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
   "files": [
     "dist/**",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && rollup -c rollup.config.mjs",
+    "build:watch": "rollup -c rollup.config.mjs -w",
     "clean": "rimraf dist",
-    "prepare": "npm run clean && npm run build",
+    "prepare": "npm run build",
+    "verify-build": "node scripts/verify-build.js",
+    "postbuild": "npm run verify-build",
     "test": "vitest run --testTimeout=60000",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
@@ -48,6 +61,11 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.25.0",
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.4",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -61,7 +79,7 @@
     "@vitest/eslint-plugin": "^1.1.43",
     "@vitest/ui": "^3.1.1",
     "dotenv": "^16.3.1",
-    "eslint": "9.17.0",
+    "eslint": "^9.31.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.2.3",
@@ -72,13 +90,16 @@
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "rimraf": "^5.0.0",
+    "rollup": "^4.45.1",
+    "rollup-plugin-dts": "^6.2.1",
     "ts-node": "^10.9.2",
+    "tslib": "^2.8.1",
     "typescript": "^5.7.2",
     "vitest": "^3.1.1",
     "zustand": "^5.0.3"
   },
   "dependencies": {
-    "@hpkv/websocket-client": "^1.4.0",
+    "@hpkv/websocket-client": "^1.4.1",
     "immer": "^10.0.3"
   }
 }

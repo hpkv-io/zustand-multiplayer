@@ -16,7 +16,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "esbuild": "^0.19.0",
+    "esbuild": "^0.25.8",
     "nodemon": "^3.0.1"
   }
 }
