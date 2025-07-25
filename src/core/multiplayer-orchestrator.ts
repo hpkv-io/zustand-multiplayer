@@ -14,6 +14,7 @@ import type {
   PathExtractable,
 } from '../types/multiplayer-types';
 import { normalizeError, getCurrentTimestamp } from '../utils';
+import { getCacheManager } from '../utils/cache-manager';
 import { PathManager, StatePath } from '../utils/path-manager';
 import { detectActualChanges } from '../utils/state-utils';
 
@@ -121,6 +122,7 @@ export class MultiplayerOrchestrator<TState> {
       statePath,
       currentState,
       this.initialState as Record<string, unknown>,
+      this.options.zFactor ?? 2,
     );
     // Apply the deletion first
     await this.applyStateChange(deletionUpdate as Partial<TState>, false, true);
@@ -323,9 +325,17 @@ export class MultiplayerOrchestrator<TState> {
   }
 
   private detectSerializableChanges(state: Partial<TState>) {
+    const zFactor = this.options.zFactor ?? 2;
+
+    // Clear the path extraction cache to ensure fresh results
+    // This is important when object contents change but references remain the same
+    getCacheManager().pathExtractionCache.clear();
+
     const actualChanges = detectActualChanges(
       this.previousState as PathExtractable,
       state as PathExtractable,
+      [],
+      zFactor,
     );
 
     return actualChanges.filter(({ path, value }) => {

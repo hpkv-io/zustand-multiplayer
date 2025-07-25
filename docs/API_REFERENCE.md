@@ -171,6 +171,9 @@ interface MultiplayerOptions<TState> {
   publishUpdatesFor?: () => Array<keyof TState>; // Fields to publish
   subscribeToUpdatesFor?: () => Array<keyof TState>; // Fields to subscribe to
 
+  // Storage granularity
+  zFactor?: number; // Granularity depth (0-10, default: 2)
+
   // Lifecycle hooks
   onHydrate?: (state: TState) => void;
   onConflict?: (conflicts: ConflictInfo<TState>[]) => ConflictResolution<TState>;
@@ -332,6 +335,7 @@ const useStore = create<WithMultiplayer<MyState>>()(
       namespace: 'my-app',
       apiBaseUrl: 'https://api.hpkv.io',
       tokenGenerationUrl: '/api/generate-token',
+      zFactor: 2, // Configure storage granularity (0-10, default: 2)
     },
   ),
 );
@@ -523,6 +527,64 @@ Controls which remote changes this client receives.
 ```
 
 **Default:** All non-function properties
+
+### Storage Granularity
+
+#### `zFactor?: number`
+
+Controls the depth level for granular storage optimization. This option determines how deeply the middleware traverses nested objects when storing state changes.
+
+```typescript
+{
+  zFactor: 2; // Default: store at depth 2
+}
+```
+
+**Range:** 0-10 (default: 2)
+
+**Behavior by value:**
+
+- **zFactor: 0** - Basic granularity: Each top-level property gets its own storage key
+- **zFactor: 1** - Store at depth 1: Each nested property at depth 2 gets its own key
+- **zFactor: 2** - Store at depth 2: Each nested property at depth 3 gets its own key (default)
+- **zFactor: 4-10** - Store at specified depth: More granular storage for deeply nested data
+
+**Example with zFactor: 1:**
+
+```typescript
+// State structure
+{
+  user: {
+    profile: { name: "John", email: "john@example.com" },
+    preferences: { theme: "dark" }
+  },
+  todos: {
+    "1": { id: "1", text: "Buy milk", completed: false }
+  }
+}
+
+// Storage keys created:
+// namespace:user:profile -> { "name": "John", "email": "john@example.com" }
+// namespace:user:preferences -> { "theme": "dark" }
+// namespace:todos:1 -> { "id": "1", "text": "Buy milk", "completed": false }
+```
+
+**Example with zFactor: 2:**
+
+```typescript
+// Same state structure, but more granular storage:
+// namespace:user:profile:name -> "John"
+// namespace:user:profile:email -> "john@example.com"
+// namespace:user:preferences:theme -> "dark"
+// namespace:todos:1:id -> "1"
+// namespace:todos:1:text -> "Buy milk"
+// namespace:todos:1:completed -> false
+```
+
+**Performance considerations:**
+
+- **Lower zFactor (0-2)**: Fewer storage keys, larger update payloads
+- **Higher zFactor (3-10)**: More granular storage, smaller update payloads, more storage operations
 
 ### Lifecycle Hooks
 

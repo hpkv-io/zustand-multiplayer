@@ -11,7 +11,7 @@
 
 ## What is Zustand Multiplayer?
 
-Zustand Multiplayer is a powerful middleware that transforms any Zustand store into a real-time collaborative state management system. It provides:
+Zustand Multiplayer is a powerful middleware that transforms any Zustand store into a real-time collaborative state management system. You can convert your existing Zustand stores to mutliplayer stores just in few steps. It provides:
 
 ### ✨ **Key Features**
 
@@ -202,9 +202,20 @@ export const useAppStore = create(
 - ✅ `sharedSettings` - synchronized across all users - will be persisted/synced
 - ✅ `userPreferences` - local to each user - Won't be persisted/synced
 
-### 🔧 Granular Storage - Reduce Conflicts in  Collaborative Apps
+### 🔧 Granular Storage - Reduce Conflicts in Collaborative Apps
 
-Multiplayer uses  a granular storage scheme that defines how nested state is stored and synchronized. Instead of treating entire objects as single units, it breaks down nested structures into individual storage keys, avoiding unnecessary conflicts for collaborative editing.
+Multiplayer uses a granular storage scheme that defines how nested state is stored and synchronized. Instead of treating entire objects as single units, it breaks down nested structures into individual storage keys, avoiding unnecessary conflicts for collaborative editing.
+
+The `zFactor` option controls the depth level for granular storage, allowing you to optimize performance based on your data structure:
+
+- **zFactor: 0**: Basic granularity - Each of top level properties of state are stored as a separate unit 
+- **Lower zFactor (1-2)**: Fewer storage keys, larger update payloads, less storage operations
+- **Higher zFactor (3-10)**: More granular storage, smaller update payloads, more storage operations
+
+**Choosing the Right zFactor:**
+- **Use lower zFactor** when properties in an object are usually changed together (e.g., user profile fields that update as a form)
+- **Use higher zFactor** when properties change independently (e.g., individual todo items in a todo list that different users might edit)
+- Consider your collaboration patterns: If multiple users edit different parts of the same object simultaneously, use a higher zFactor to minimize conflicts
 
 `multiplayer` allows [immer style](https://immerjs.github.io/immer/) state updates to conveniently changing only part of the state which is intended to be changed.
 
@@ -225,7 +236,8 @@ Multiplayer uses  a granular storage scheme that defines how nested state is sto
 ```
 
 #### Storage Example
-For this example state value
+
+For this example state value with `zFactor: 1`:
 ```
 {
   "user": {
@@ -249,7 +261,16 @@ For this example state value
   }
 }
 ```
-Each state part will be stored in a sepearate key in databse:
+
+Each state part will be stored in a separate key in database:
+```
+namespace:user:profile -> { "name": "John", "email": "john@example.com" }
+namespace:user:preferences -> { "theme": "dark" }
+namespace:todos:1 -> { "id": "1", "text": "Buy milk", "completed": false }
+namespace:todos:2 -> { "id": "2", "text": "Walk dog", "completed": true }
+```
+
+With `zFactor: 2`, the same state would be stored more granularly:
 ```
 namespace:user:profile:name -> "John"
 namespace:user:profile:email -> "john@example.com"  
@@ -265,43 +286,8 @@ namespace:todos:2:completed -> true
 Each nested property gets its own storage key, allowing the middleware to:
 - **Track changes at depth** - Sync only the specific nested properties that changed
 - **Reduce conflicts** - Multiple users can edit different nested properties simultaneously
+- **Optimize performance** - Choose the right granularity level for your data structure
 
-
-```javascript
-export const useAppStore = create(
-  multiplayer(
-    (set) => ({
-      // Nested object structure
-      user: {
-        profile: { name: '', email: '' },
-        preferences: { theme: 'light', notifications: true }
-      },
-      // Record structure (key-value pairs)
-      todos: {},
-
-      updateUserEmail: (email) => set((state) => {
-        state.user.profile.email = email
-      }),
-      updatePreferences: (prefs) => set((state) => {
-        state.user.preferences = { ...state.user.preferences, ...prefs };
-      }),
-      // Actions for Record structure
-      addTodo: (text) => set((state) => {
-        const id = Date.now().toString();
-        state.todos[id] = { id, text, completed: false };
-      }),
-      updateTodo: (id, updates) => set((state) => {
-        if (state.todos[id]) {
-          state.todos[id] = { ...state.todos[id], ...updates };
-        }
-      }),
-    }),
-    {
-      namespace: 'collaborative-app',
-      // options...
-    })
-);
-```
 
 > **📝 Records vs Arrays for Collections:**
 > multiplayer treats records as objects so each record entry will be stored in a separate key-value entry in the database, however arrays are treated as primitive types and array members will not be stored in separate key-value entries.
@@ -458,6 +444,8 @@ interface TodoState {
 
 ## Using without React
 
+For non-react usage, instead of Zustand's `create`, use `createStore` from vanilla Zustand
+
 ### Using Vanilla JavaScript
 
 ```javascript
@@ -579,6 +567,9 @@ All published state changes are automatically:
   // Selective sync
   publishUpdatesFor: () => ['field1', 'field2'],
   subscribeToUpdatesFor: () => ['field1', 'field3'],
+  
+  // Storage granularity
+  zFactor: 4, // Controls depth level for granular storage (0-10, default: 2)
   
   // Lifecycle hooks
   onHydrate: (state) => console.log('Hydrated:', state),
