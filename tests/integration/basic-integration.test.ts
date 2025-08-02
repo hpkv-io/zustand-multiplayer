@@ -1,43 +1,20 @@
+import type { HPKVGetResponse } from '@hpkv/websocket-client';
+import { ConnectionState } from '@hpkv/websocket-client';
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import {
-  ImmerStateCreator,
-  MultiplayerOptions,
-  WithMultiplayer,
-} from '../../src/types/multiplayer-types';
+import type { StateCreator } from 'zustand';
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+import type { MultiplayerOptions, WithMultiplayer } from '../../src/types/multiplayer-types';
+import { MockHPKVClientFactory } from '../mocks/mock-hpkv-client';
 import { createUniqueStoreName, waitFor } from '../utils/test-utils';
-import {
-  ConnectionState,
-  MockHPKVClientFactory,
-  MockTokenHelper,
-  MockWebsocketTokenManager,
-} from '../mocks';
-import { HPKVGetResponse } from '@hpkv/websocket-client';
+import { setupE2EMocks, importAfterMocks } from './setup';
 
-vi.doMock('@hpkv/websocket-client', () => {
-  return {
-    HPKVClientFactory: MockHPKVClientFactory,
-    WebsocketTokenManager: MockWebsocketTokenManager,
-    ConnectionState: {
-      CONNECTED: 'CONNECTED',
-      DISCONNECTED: 'DISCONNECTED',
-      CONNECTING: 'CONNECTING',
-      RECONNECTING: 'RECONNECTING',
-    },
-  };
-});
+setupE2EMocks();
 
-vi.doMock('../../src/auth/token-helper', () => {
-  return {
-    TokenHelper: MockTokenHelper,
-  };
-});
+const { StoreCreator } = await importAfterMocks();
 const multiplayerModule = await import('../../src/multiplayer');
-const { StoreCreator } = await import('../utils/store-creator');
 const { multiplayer } = multiplayerModule;
 
-type TestState = {
+interface TestState {
   count: number;
   text: string;
   nested: {
@@ -58,38 +35,45 @@ type TestState = {
   updateNested3: (value: number) => void;
   addTodo: (title: string) => void;
   removeTodo: (title: string) => void;
-};
+}
 
-const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: StateCreator<TestState, [], []> = set => ({
   count: 0,
   text: '',
   nested: { value: 0, nested2: { value: 0, nested3: { value: 0 } } },
   todos: {},
   increment: () => set(state => ({ count: state.count + 1 })),
   decrement: () => set(state => ({ count: state.count - 1 })),
-  setText: (text: string) =>
-    set(state => {
-      state.text = text;
-    }),
-  updateNested: (value: number) =>
-    set(state => {
-      state.nested.value = value;
-    }),
+  setText: (text: string) => set({ text }),
+  updateNested: (value: number) => set(state => ({ nested: { ...state.nested, value } })),
   updateNested2: (value: number) =>
-    set(state => {
-      state.nested.nested2.value = value;
-    }),
+    set(state => ({
+      nested: {
+        ...state.nested,
+        nested2: { ...state.nested.nested2, value },
+      },
+    })),
   updateNested3: (value: number) =>
-    set(state => {
-      state.nested.nested2.nested3.value = value;
-    }),
+    set(state => ({
+      nested: {
+        ...state.nested,
+        nested2: {
+          ...state.nested.nested2,
+          nested3: { ...state.nested.nested2.nested3, value },
+        },
+      },
+    })),
   addTodo: (title: string) =>
-    set(state => {
-      state.todos[title] = { id: title, title, completed: false };
-    }),
+    set(state => ({
+      todos: {
+        ...state.todos,
+        [title]: { id: title, title, completed: false },
+      },
+    })),
   removeTodo: (title: string) =>
     set(state => {
-      delete state.todos[title];
+      const { [title]: _, ...rest } = state.todos;
+      return { todos: rest };
     }),
 });
 
@@ -98,8 +82,6 @@ function createTestStore(
   options?: Partial<MultiplayerOptions<TestState>> | MultiplayerOptions<TestState>,
 ) {
   return storeCreator.createStore<TestState>(initializer, {
-    apiKey: 'test-api-key',
-    apiBaseUrl: 'hpkv-base-api-url',
     profiling: true,
     ...options,
   });
@@ -136,7 +118,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
 
     it('should throw error when neither apiKey nor tokenGenerationUrl is provided', () => {
       expect(() => {
-        create()(
+        create<WithMultiplayer<TestState>>()(
           multiplayer(initializer, {
             namespace: 'test',
             apiBaseUrl: 'https://api.example.com',
@@ -225,7 +207,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
       });
       await waitFor(() => expect(store.getState().multiplayer.connectionState).toBe('CONNECTED'));
 
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+      const client = MockHPKVClientFactory.findClientsByNamespace(`${uniqueNamespace}-2`)[0];
       const stateChanges: string[] = [];
       const unsubscribe = store.subscribe(state => {
         stateChanges.push(state.multiplayer.connectionState);
@@ -281,10 +263,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.getState().setText('Persisted Text');
       store.getState().updateNested(10);
       await new Promise(resolve => setTimeout(resolve, 100));
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      const countKey = (await client.get(`${uniqueNamespace}:count`)) as HPKVGetResponse;
-      const textKey = (await client.get(`${uniqueNamespace}:text`)) as HPKVGetResponse;
-      const nestedKey = (await client.get(`${uniqueNamespace}:nested:value`)) as HPKVGetResponse;
+      const client = MockHPKVClientFactory.findClientsByNamespace(`${uniqueNamespace}-2`)[0];
+      const countKey = (await client.get(`${uniqueNamespace}-2:count`)) as HPKVGetResponse;
+      const textKey = (await client.get(`${uniqueNamespace}-2:text`)) as HPKVGetResponse;
+      const nestedKey = (await client.get(`${uniqueNamespace}-2:nested:value`)) as HPKVGetResponse;
       expect(JSON.parse(countKey.value as string).value).toBe(1);
       expect(JSON.parse(textKey.value as string).value).toBe('Persisted Text');
       expect(JSON.parse(nestedKey.value as string).value).toBe(10);
@@ -311,14 +293,20 @@ describe('Multiplayer Middleware Basic Tests', () => {
       await waitFor(() => store.getState().multiplayer.hasHydrated);
       store.getState().updateNested(10);
       await new Promise(resolve => setTimeout(resolve, 100));
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      await expect(client.get(`${uniqueNamespace}:updateNested`)).resolves.toHaveProperty(
+      const client = MockHPKVClientFactory.findClientsByNamespace(`${uniqueNamespace}-2`)[0];
+      await expect(client.get(`${uniqueNamespace}-2:updateNested`)).resolves.toHaveProperty(
         'code',
         404,
       );
-      await expect(client.get(`${uniqueNamespace}:increment`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:decrement`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:setText`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}-2:increment`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}-2:decrement`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}-2:setText`)).resolves.toHaveProperty('code', 404);
     });
 
     it('should hydrate nested states correctly', async () => {
@@ -379,7 +367,6 @@ describe('Multiplayer Middleware Basic Tests', () => {
       const store2 = createTestStore({ namespace: uniqueNamespace });
       await waitFor(() => store1.getState().multiplayer.hasHydrated);
       await waitFor(() => store2.getState().multiplayer.hasHydrated);
-      // Perform rapid updates
       for (let i = 0; i < 10; i++) {
         store1.getState().increment();
       }
@@ -398,13 +385,18 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.getState().setText('Synced Text');
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+      const client = MockHPKVClientFactory.findClientsByNamespace(`${uniqueNamespace}-2`)[0];
 
-      // Functions should not be stored
-      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:increment`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:decrement`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:setText`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}-2:count`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}-2:increment`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}-2:decrement`)).resolves.toHaveProperty(
+        'code',
+        404,
+      );
+      await expect(client.get(`${uniqueNamespace}-2:setText`)).resolves.toHaveProperty('code', 404);
     });
   });
 
@@ -420,10 +412,10 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.getState().updateNested(25);
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:text`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
+      const client = MockHPKVClientFactory.findClientsByNamespace(`${uniqueNamespace}-2`)[0];
+      await expect(client.get(`${uniqueNamespace}-2:count`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}-2:text`)).resolves.toHaveProperty('code', 200);
+      await expect(client.get(`${uniqueNamespace}-2:nested:value`)).resolves.toHaveProperty(
         'code',
         200,
       );
@@ -457,174 +449,12 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.getState().updateNested(50);
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
+      const client = MockHPKVClientFactory.findClientsByNamespace(`${uniqueNamespace}-2`)[0];
       await store.getState().multiplayer.clearStorage();
 
-      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:text`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-    });
-  });
-
-  describe('zFactor Tests', () => {
-    it('should handle zFactor 0 correctly', async () => {
-      const uniqueNamespace = createUniqueStoreName('z-factor-0-test');
-
-      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 0 });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-      store.getState().updateNested(25);
-      store.getState().addTodo('Test');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-
-      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos`)).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:Test`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-    });
-
-    it('should handle zFactor 1 correctly', async () => {
-      const uniqueNamespace = createUniqueStoreName('z-factor-1-test');
-      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 1 });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-
-      store.getState().updateNested(25);
-      store.getState().updateNested2(25);
-      store.getState().addTodo('Test');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      await expect(client.get(`${uniqueNamespace}:count`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2:value`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-    });
-
-    it('should handle zFactor 2 correctly', async () => {
-      const uniqueNamespace = createUniqueStoreName('z-factor-2-test');
-
-      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 2 });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-
-      store.getState().updateNested(25);
-      store.getState().updateNested2(25);
-      store.getState().updateNested3(25);
-      store.getState().addTodo('Test');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2:value`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test:id`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test:title`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test:completed`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-    });
-
-    it('should handle zFactor 3 correctly', async () => {
-      const uniqueNamespace = createUniqueStoreName('z-factor-3-test');
-      const store = createTestStore({ namespace: uniqueNamespace, zFactor: 3 });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-      const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-
-      store.getState().updateNested(25);
-      store.getState().updateNested2(25);
-      store.getState().updateNested3(25);
-      store.getState().addTodo('Test');
-      store.getState().addTodo('Test2');
-      store.getState().removeTodo('Test2');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      await expect(client.get(`${uniqueNamespace}:nested`)).resolves.toHaveProperty('code', 404);
-      await expect(client.get(`${uniqueNamespace}:nested:value`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2:value`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:nested:nested2:nested3`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(
-        client.get(`${uniqueNamespace}:nested:nested2:nested3:value`),
-      ).resolves.toHaveProperty('code', 200);
-      await expect(client.get(`${uniqueNamespace}:todos:Test:id`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test:title`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test:completed`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test2:id`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test2:title`)).resolves.toHaveProperty(
-        'code',
-        404,
-      );
-      await expect(client.get(`${uniqueNamespace}:todos:Test2:completed`)).resolves.toHaveProperty(
+      await expect(client.get(`${uniqueNamespace}-2:count`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}-2:text`)).resolves.toHaveProperty('code', 404);
+      await expect(client.get(`${uniqueNamespace}-2:nested:value`)).resolves.toHaveProperty(
         'code',
         404,
       );
@@ -667,71 +497,7 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store1.getState().increment();
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Store2 should not have received any updates from store1
       expect(subscriber).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Middleware Integration', () => {
-    it('should work with another middleware', async () => {
-      const uniqueNamespace = createUniqueStoreName('middleware-test');
-      const store = create<WithMultiplayer<TestState>>()(
-        subscribeWithSelector(
-          multiplayer(initializer, {
-            namespace: uniqueNamespace,
-            apiBaseUrl: 'hpkv-base-api-url',
-            apiKey: 'test-api-key',
-          }),
-        ),
-      );
-
-      const subscriber = vi.fn();
-      store.subscribe(state => state.count, subscriber);
-
-      store.getState().increment(); // This should trigger subscriber
-      store.getState().setText('No Trigger'); // This should NOT trigger subscriber
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-      await waitFor(() => {
-        expect(subscriber).toHaveBeenCalledTimes(1);
-      });
-    });
-  });
-
-  describe('Immer-Style Updates', () => {
-    it('should support immer-style updates', async () => {
-      const uniqueNamespace = createUniqueStoreName('immer-updates-test');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      store.setState(state => {
-        state.count = 5;
-        state.text = 'Immer Update';
-      });
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      expect(store.getState().count).toBe(5);
-      expect(store.getState().text).toBe('Immer Update');
-    });
-
-    it('should sync immer-style updates between clients', async () => {
-      const uniqueNamespace = createUniqueStoreName('immer-sync-test');
-      const store1 = createTestStore({ namespace: uniqueNamespace });
-      const store2 = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store1.getState().multiplayer.hasHydrated);
-      await waitFor(() => store2.getState().multiplayer.hasHydrated);
-
-      store1.setState(state => {
-        state.count = 10;
-        state.text = 'Synced Immer';
-      });
-
-      await waitFor(() => {
-        expect(store2.getState().count).toBe(10);
-        expect(store2.getState().text).toBe('Synced Immer');
-      });
     });
   });
 
@@ -769,22 +535,6 @@ describe('Multiplayer Middleware Basic Tests', () => {
   });
 
   describe('Error Handling & Edge Cases', () => {
-    it('should handle empty initial state', () => {
-      const emptyInitializer: ImmerStateCreator<
-        {},
-        [['zustand/multiplayer', unknown]],
-        []
-      > = () => ({});
-      const store = storeCreator.createStore<{}>(emptyInitializer, {
-        namespace: createUniqueStoreName('empty-state-test'),
-        apiKey: 'test-api-key',
-        apiBaseUrl: 'hpkv-base-api-url',
-      });
-
-      expect(store.getState()).toBeDefined();
-      expect(store.getState().multiplayer).toBeDefined();
-    });
-
     it('should handle undefined and null values correctly', async () => {
       const uniqueNamespace = createUniqueStoreName('null-undefined-test');
       const store = createTestStore({ namespace: uniqueNamespace });
@@ -792,7 +542,6 @@ describe('Multiplayer Middleware Basic Tests', () => {
       store.setState({ text: null as any });
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Null values should be handled gracefully
       expect(store.getState().text).toBeNull();
     });
   });

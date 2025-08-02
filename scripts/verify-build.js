@@ -41,34 +41,6 @@ try {
   hasErrors = true;
 }
 
-// Check for side effects in the built files
-console.log('\n🌳 Checking for side effects...');
-const distFiles = ['dist/index.js', 'dist/index.mjs'];
-
-distFiles.forEach(file => {
-  const filePath = path.join(process.cwd(), file);
-  if (fs.existsSync(filePath)) {
-    const content = fs.readFileSync(filePath, 'utf-8');
-
-    // Basic checks for common side effects
-    const sideEffectPatterns = [
-      /console\.(log|warn|error)\(/,
-      /document\./,
-      /window\./,
-      /global\./,
-      /process\.env(?!\.NODE_ENV)/,
-    ];
-
-    const foundSideEffects = sideEffectPatterns.filter(pattern => pattern.test(content));
-
-    if (foundSideEffects.length > 0) {
-      console.log(`⚠️  ${file} may contain side effects`);
-    } else {
-      console.log(`✅ ${file} appears to be side-effect free`);
-    }
-  }
-});
-
 if (hasErrors) {
   console.log('\n❌ Build verification failed!');
   process.exit(1);

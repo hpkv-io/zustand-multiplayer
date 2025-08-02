@@ -1,5 +1,12 @@
-import { Logger } from '../monitoring/logger';
+import type { Logger } from '../monitoring/logger';
+import type { ErrorContext } from '../types/multiplayer-types';
 import { normalizeError, createDelay, getCurrentTimestamp } from '../utils';
+import {
+  DEFAULT_BACKOFF_FACTOR,
+  DEFAULT_RETRY_DELAY,
+  DEFAULT_TIMEOUT,
+  MAX_RETRY_ATTEMPTS,
+} from '../utils/constants';
 
 // ============================================================================
 // RETRY CONFIGURATION TYPES
@@ -13,10 +20,19 @@ export interface RetryConfig {
 }
 
 // ============================================================================
+// ERROR HANDLING TYPES
+// ============================================================================
+
+/**
+ * Error handler function type
+ */
+export type ErrorHandler = (error: unknown, context: ErrorContext) => void;
+
+// ============================================================================
 // ERROR HANDLING SYSTEM
 // ============================================================================
 
-export class RetryableError extends Error {
+class RetryableError extends Error {
   constructor(
     message: string,
     public readonly code: string,
@@ -28,13 +44,13 @@ export class RetryableError extends Error {
   }
 }
 
-export class CircuitBreakerError extends RetryableError {
+class CircuitBreakerError extends RetryableError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 'CIRCUIT_BREAKER_OPEN', false, context);
   }
 }
 
-export class MaxRetriesExceededError extends RetryableError {
+class MaxRetriesExceededError extends RetryableError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, 'MAX_RETRIES_EXCEEDED', true, context);
   }
@@ -50,8 +66,8 @@ export class RetryManager {
   private circuitBreakerOpen = false;
 
   constructor(
-    private config: RetryConfig,
-    private logger: Logger,
+    private readonly config: RetryConfig,
+    private readonly logger: Logger,
   ) {}
 
   async executeWithRetry<T>(operation: () => Promise<T>, operationName: string): Promise<T> {
@@ -116,7 +132,10 @@ export class RetryManager {
     this.failureCount = 0;
     this.lastFailureTime = 0;
     this.circuitBreakerOpen = false;
-    this.logger.debug('Retry manager state reset');
+    this.logger.debug('Retry manager state reset', {
+      operation: 'retry-reset',
+      previousFailures: this.failureCount,
+    });
   }
 
   /**
@@ -132,6 +151,20 @@ export class RetryManager {
 }
 
 // ============================================================================
+// ERROR HANDLING UTILITIES
+// ============================================================================
+
+/**
+ * Creates a standardized error handler with logging
+ */
+export function createErrorHandler(logger: Logger): ErrorHandler {
+  return (error: unknown, context: ErrorContext) => {
+    const operation = context.operation ?? 'unknown-operation';
+    logger.error(`Failed operation: ${operation}`, normalizeError(error), context);
+  };
+}
+
+// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
@@ -140,10 +173,10 @@ export class RetryManager {
  */
 export function createDefaultRetryConfig(): RetryConfig {
   return {
-    maxRetries: 3,
-    baseDelay: 1000,
-    maxDelay: 10000,
-    backoffFactor: 2,
+    maxRetries: MAX_RETRY_ATTEMPTS,
+    baseDelay: DEFAULT_RETRY_DELAY,
+    maxDelay: DEFAULT_TIMEOUT,
+    backoffFactor: DEFAULT_BACKOFF_FACTOR,
   };
 }
 

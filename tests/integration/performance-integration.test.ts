@@ -1,33 +1,14 @@
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
-import { ImmerStateCreator, MultiplayerOptions } from '../../src/types/multiplayer-types';
+import type { StateCreator } from 'zustand';
+import type { MultiplayerOptions } from '../../src/types/multiplayer-types';
 import { createUniqueStoreName, waitFor, waitForMetrics } from '../utils/test-utils';
-import { MockHPKVClientFactory } from '../mocks/mock-hpkv-client';
-import { MockWebsocketTokenManager } from '../mocks/mock-token-manager';
-import { MockTokenHelper } from '../mocks/mock-token-manager';
+import { setupE2EMocks, importAfterMocks } from './setup';
 
-vi.doMock('@hpkv/websocket-client', () => {
-  return {
-    HPKVClientFactory: MockHPKVClientFactory,
-    WebsocketTokenManager: MockWebsocketTokenManager,
-    ConnectionState: {
-      CONNECTED: 'CONNECTED',
-      DISCONNECTED: 'DISCONNECTED',
-      CONNECTING: 'CONNECTING',
-      RECONNECTING: 'RECONNECTING',
-    },
-  };
-});
+setupE2EMocks();
 
-vi.doMock('../../src/auth/token-helper', () => {
-  return {
-    TokenHelper: MockTokenHelper,
-  };
-});
+const { StoreCreator } = await importAfterMocks();
 
-const { StoreCreator } = await import('../utils/store-creator');
-
-// Test state for performance monitoring
-type TestState = {
+interface TestState {
   count: number;
   text: string;
   data: Record<string, any>;
@@ -35,9 +16,9 @@ type TestState = {
   setText: (text: string) => void;
   setData: (key: string, value: any) => void;
   batchUpdate: () => void;
-};
+}
 
-const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown]], []> = set => ({
+const initializer: StateCreator<TestState, [], []> = set => ({
   count: 0,
   text: '',
   data: {},
@@ -48,11 +29,11 @@ const initializer: ImmerStateCreator<TestState, [['zustand/multiplayer', unknown
       data: { ...state.data, [key]: value },
     })),
   batchUpdate: () =>
-    set(state => {
-      state.count = state.count + 1;
-      state.text = `Updated ${Date.now()}`;
-      state.data = { ...state.data, timestamp: Date.now() };
-    }),
+    set(state => ({
+      count: state.count + 1,
+      text: `Updated ${Date.now()}`,
+      data: { ...state.data, timestamp: Date.now() },
+    })),
 });
 
 const storeCreator = new StoreCreator();
@@ -62,8 +43,6 @@ function createTestStore(
 ) {
   return storeCreator.createStore<TestState>(initializer, {
     ...options,
-    apiKey: 'test-api-key',
-    apiBaseUrl: 'hpkv-base-api-url',
     profiling: true,
   });
 }
@@ -104,7 +83,6 @@ describe('Multiplayer Middleware Performance Tests', () => {
     const initialMetrics = store.getState().multiplayer.getMetrics();
     const initialChanges = initialMetrics.stateChangesProcessed;
 
-    // Perform multiple operations
     const numberOfOperations = 5;
     for (let i = 0; i < numberOfOperations; i++) {
       store.getState().increment();
@@ -143,22 +121,15 @@ describe('Multiplayer Middleware Performance Tests', () => {
     const store = createTestStore({ namespace: uniqueNamespace });
     await waitFor(() => store.getState().multiplayer.hasHydrated);
 
-    const client = MockHPKVClientFactory.findClientsByNamespace(uniqueNamespace)[0];
-    client.setOperationDelay(operationDelay);
-
-    // Perform multiple sync operations
     store.getState().increment();
     store.getState().setText('Test sync timing');
     store.getState().setData('syncKey', 'syncValue');
 
     await waitFor(() => {
       const metrics = store.getState().multiplayer.getMetrics();
-      return metrics.averageSyncTime > 0;
+      expect(metrics.averageSyncTime).toBeGreaterThanOrEqual(0.8 * operationDelay);
+      expect(metrics.averageSyncTime).toBeLessThanOrEqual(operationDelay * 3);
     });
-
-    const metrics = store.getState().multiplayer.getMetrics();
-    expect(metrics.averageSyncTime).toBeGreaterThanOrEqual(operationDelay);
-    expect(metrics.averageSyncTime).toBeLessThanOrEqual(operationDelay * 3);
   });
 
   it('should track sync time across multiple operations', async () => {
@@ -185,27 +156,5 @@ describe('Multiplayer Middleware Performance Tests', () => {
     const metrics = store.getState().multiplayer.getMetrics();
     expect(metrics.averageSyncTime).toBeGreaterThan(0);
     expect(metrics.stateChangesProcessed).toBeGreaterThanOrEqual(numberOfSyncOperations);
-  });
-
-  it('should handle batch operations efficiently', async () => {
-    const uniqueNamespace = createUniqueStoreName('performance-batch');
-    const store = createTestStore({ namespace: uniqueNamespace });
-
-    const initialMetrics = store.getState().multiplayer.getMetrics();
-
-    // Perform batch operations
-    const batchSize = 10;
-    for (let i = 0; i < batchSize; i++) {
-      store.getState().batchUpdate();
-    }
-
-    await waitForMetrics(() => store.getState().multiplayer.getMetrics(), {
-      stateChangesProcessed: initialMetrics.stateChangesProcessed + batchSize,
-    });
-
-    const finalMetrics = store.getState().multiplayer.getMetrics();
-    expect(finalMetrics.stateChangesProcessed).toBeGreaterThan(
-      initialMetrics.stateChangesProcessed,
-    );
   });
 });

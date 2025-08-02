@@ -1,131 +1,94 @@
 import { ConnectionState } from '@hpkv/websocket-client';
-import { produce } from 'immer';
-import type { Draft } from 'immer';
-import { StateCreator, StoreMutatorIdentifier, StoreApi } from 'zustand/vanilla';
+import type { StateCreator, StoreMutatorIdentifier, StoreApi } from 'zustand/vanilla';
 import { MultiplayerOrchestrator } from './core/multiplayer-orchestrator';
-import { createLogger, LogLevel, Logger } from './monitoring/logger';
+import { ServiceFactory } from './core/service-factory';
+import { detectStateChanges, detectStateDeletions } from './core/state-manager';
+import type { Logger } from './monitoring/logger';
+import { createLogger, LogLevel } from './monitoring/logger';
+import type { RetryConfig } from './network/retry';
 import { createDefaultRetryConfig } from './network/retry';
-import { createHPKVStorage, HPKVStorageOptions } from './storage/hpkv-storage';
+import type { HPKVStorageOptions } from './storage/hpkv-storage';
+import { createHPKVStorage } from './storage/hpkv-storage';
 import {
+  type WithMultiplayer,
   type MultiplayerOptions,
   type MultiplayerState,
-  type ImmerStateCreator,
   type PathExtractable,
-  ConfigurationError,
+  MultiplayerError,
+  ErrorSeverity,
+  ErrorCategory,
 } from './types/multiplayer-types';
-import { ARROW_FUNCTION_INDICATOR } from './utils/constants';
-import { detectStateDeletions, detectStateChanges } from './utils/state-utils';
+import { validateOptions } from './utils/config-validator';
+import { DEFAULT_Z_FACTOR, MAX_Z_FACTOR, MIN_Z_FACTOR } from './utils/constants';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
+/**
+ * Main multiplayer middleware type
+ */
 type Multiplayer = <
   T,
   Mps extends [StoreMutatorIdentifier, unknown][] = [],
   Mcs extends [StoreMutatorIdentifier, unknown][] = [],
-  U = T & { multiplayer: MultiplayerState },
 >(
-  initializer: ImmerStateCreator<T, [...Mps, ['zustand/multiplayer', unknown]], Mcs, T>,
+  initializer: StateCreator<
+    T,
+    [...Mps, ['zustand/multiplayer', never]],
+    Mcs,
+    Omit<T, 'multiplayer'>
+  >,
+  options: MultiplayerOptions<Omit<T, 'multiplayer'>>,
+) => StateCreator<T, Mps, [['zustand/multiplayer', never], ...Mcs], WithMultiplayer<T>>;
+
+/**
+ * Internal implementation type
+ */
+type MultiplayerImpl = <T extends { multiplayer: MultiplayerState }>(
+  stateCreator: StateCreator<T, [], []>,
   options: MultiplayerOptions<T>,
-) => StateCreator<U, Mps, [['zustand/multiplayer', U], ...Mcs]>;
-
-type MultiplayerMiddleware = <TState>(
-  config: ImmerStateCreator<TState, [], [], TState>,
-  options: MultiplayerOptions<TState>,
-) => StateCreator<TState & { multiplayer: MultiplayerState }, [], []>;
-
-type StateUpdateFunction<TState> = (state: TState) => TState | Partial<TState>;
-type StateUpdateImmerFunction<TState> = (state: Draft<TState>) => void;
-type StateUpdatePartial<TState> = TState | Partial<TState>;
-type StateUpdateWithChanges<TState> = {
-  changes: Partial<TState>;
-  deletions: Array<{ path: string[] }>;
-};
-
-type StateUpdateInput<TState> =
-  | StateUpdatePartial<TState>
-  | StateUpdateFunction<TState>
-  | StateUpdateImmerFunction<TState>
-  | StateUpdateWithChanges<TState>;
+) => StateCreator<WithMultiplayer<T>, [], []>;
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
 /**
- * Validates that required authentication options are provided
+ * Creates normalized options with safe defaults
  */
-function validateAuthenticationOptions<TState>(options: MultiplayerOptions<TState>): void {
-  if (!options.apiKey && !options.tokenGenerationUrl) {
-    throw new ConfigurationError(
-      'Either apiKey or tokenGenerationUrl must be provided for authentication',
-      {
-        apiKey: options.apiKey,
-        tokenGenerationUrl: options.tokenGenerationUrl,
-        operation: 'authentication-validation',
-      },
-    );
-  }
-}
-
-/**
- * Determines if a function is an arrow function by checking its string representation
- */
-function isArrowFunction(func: (...args: any[]) => any): boolean {
-  return func.toString().includes(ARROW_FUNCTION_INDICATOR);
-}
-
-/**
- * Processes Immer function updates
- */
-function processImmerFunctionUpdate<TState>(
-  func: StateUpdateImmerFunction<TState>,
-  getCurrentState: () => TState,
-  orchestrator: MultiplayerOrchestrator<TState>,
-  replace?: boolean,
-  zFactor: number = 2,
-): void {
-  const oldState = getCurrentState();
-  const newState = produce(oldState, func);
-
-  const changes = detectStateChanges(oldState, newState);
-  const deletions = detectStateDeletions(
-    oldState as PathExtractable,
-    newState as PathExtractable,
-    zFactor,
+function normalizeOptions<T>(
+  options: MultiplayerOptions<T>,
+  nonFunctionKeys: Array<keyof T>,
+): MultiplayerOptions<T> & {
+  subscribeToUpdatesFor: () => Array<keyof T>;
+  publishUpdatesFor: () => Array<keyof T>;
+  logLevel: LogLevel;
+  retryConfig: RetryConfig;
+  profiling: boolean;
+  zFactor: number;
+} {
+  const zFactor = Math.min(
+    Math.max(MIN_Z_FACTOR, options.zFactor ?? DEFAULT_Z_FACTOR),
+    MAX_Z_FACTOR,
   );
-
-  orchestrator.handleStateChangeRequest({ changes, deletions }, replace);
-}
-
-/**
- * Creates default sync options with fallbacks
- */
-function createDefaultSyncOptions<TState>(
-  options: MultiplayerOptions<TState>,
-  nonFunctionKeys: Array<keyof TState>,
-): MultiplayerOptions<TState> {
-  const zFactor = options.zFactor !== undefined ? Math.min(Math.max(0, options.zFactor), 10) : 2;
 
   return {
     subscribeToUpdatesFor: () => nonFunctionKeys,
     publishUpdatesFor: () => nonFunctionKeys,
-    onConflict: _conflicts => {
-      return { strategy: 'keep-remote' };
-    },
+    onConflict: () => ({ strategy: 'keep-remote' }),
     logLevel: LogLevel.INFO,
     retryConfig: createDefaultRetryConfig(),
     profiling: false,
     ...options,
-    zFactor: zFactor,
+    zFactor,
   };
 }
 
 /**
  * Creates path patterns for subscription
  */
-function createPathPatterns(subscribedFields: Array<keyof any>): string[] {
+function createPathPatterns<T>(subscribedFields: Array<keyof T>): string[] {
   const pathPatterns = new Set<string>();
 
   subscribedFields.forEach(key => {
@@ -140,20 +103,20 @@ function createPathPatterns(subscribedFields: Array<keyof any>): string[] {
 /**
  * Extracts non-function keys from initial state
  */
-function extractNonFunctionKeys<TState>(
-  initialState: Record<string, unknown>,
-): Array<keyof TState> {
+function extractNonFunctionKeys<T>(initialState: Record<string, unknown>): Array<keyof T> {
   return Object.keys(initialState).filter(key => typeof initialState[key] !== 'function') as Array<
-    keyof TState
+    keyof T
   >;
 }
 
 /**
  * Sets up window cleanup handlers and returns a cleanup function
  */
-function setupWindowCleanup(orchestrator: MultiplayerOrchestrator<any>): () => void {
+function setupWindowCleanup<T>(orchestrator: MultiplayerOrchestrator<T>): () => void {
   if (typeof window !== 'undefined') {
-    const cleanup = () => orchestrator.destroy();
+    const cleanup = () => {
+      void orchestrator.destroy();
+    };
     window.addEventListener('beforeunload', cleanup);
 
     return () => {
@@ -167,8 +130,8 @@ function setupWindowCleanup(orchestrator: MultiplayerOrchestrator<any>): () => v
 /**
  * Performs async initialization of the orchestrator
  */
-async function initializeOrchestrator<TState>(
-  orchestrator: MultiplayerOrchestrator<TState>,
+async function initializeOrchestrator<T>(
+  orchestrator: MultiplayerOrchestrator<T>,
   logger: Logger,
 ): Promise<void> {
   try {
@@ -176,128 +139,125 @@ async function initializeOrchestrator<TState>(
     await orchestrator.hydrate();
   } catch (error) {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
-    logger.error('Store initialization failed', normalizedError, {
+    const initializationError = new MultiplayerError(
+      'Store initialization failed',
+      'INITIALIZATION_ERROR',
+      true,
+      {
+        operation: 'store-initialization',
+        originalError: normalizedError.message,
+      },
+      ErrorSeverity.HIGH,
+      ErrorCategory.STATE_MANAGEMENT,
+    );
+    logger.error('Store initialization failed', initializationError, {
       operation: 'store-initialization',
     });
   }
 }
 
 // ============================================================================
-// MAIN IMPLEMENTATION
+// IMPLEMENTATION
 // ============================================================================
 
-const impl: MultiplayerMiddleware = (config, options) => (_set, get, api) => {
-  validateAuthenticationOptions(options);
+/**
+ * Internal implementation with full Immer support
+ */
+const multiplayerImpl: MultiplayerImpl = (config, options) => {
+  type T = ReturnType<typeof config>;
 
-  type TState = ReturnType<typeof config>;
-  type TStateWithMultiplayer = TState & { multiplayer: MultiplayerState };
+  const validatedOptions = validateOptions(options);
 
-  const originalSetState = api.setState;
-  let orchestrator: MultiplayerOrchestrator<TState>;
+  return (set, get, api) => {
+    const originalSet = set;
+    // eslint-disable-next-line prefer-const
+    let orchestrator: MultiplayerOrchestrator<T>;
 
-  /**
-   * Enhanced setState function with multiplayer synchronization
-   */
-  const multiplayerSetState = <A extends StateUpdateInput<TState>>(
-    partial: A,
-    replace?: boolean,
-  ) => {
-    if (typeof partial === 'function') {
-      const func = partial as StateUpdateFunction<TState> | StateUpdateImmerFunction<TState>;
+    /**
+     * Multiplayer setState wrapper for synchronization
+     */
+    const multiplayerSet: typeof set = (partial, replace) => {
+      if (typeof partial === 'function') {
+        const currentState = get();
+        const nextState = partial(currentState);
 
-      if (isArrowFunction(func)) {
-        processImmerFunctionUpdate(
-          partial as StateUpdateImmerFunction<TState>,
-          () => get() as TState,
-          orchestrator,
-          replace,
-          syncOptions.zFactor ?? 2,
+        const changes = detectStateChanges(currentState, nextState);
+        const deletions = detectStateDeletions(
+          currentState as unknown as PathExtractable,
+          nextState as PathExtractable,
+          normalizedOptions.zFactor,
         );
+
+        orchestrator.handleStateChangeRequest({ changes, deletions }, replace);
       } else {
-        orchestrator.handleStateChangeRequest(partial as StateUpdateFunction<TState>, replace);
+        orchestrator.handleStateChangeRequest(partial, replace);
       }
-    } else {
-      orchestrator.handleStateChangeRequest(
-        partial as StateUpdatePartial<TState> | StateUpdateWithChanges<TState>,
-        replace,
-      );
-    }
-  };
+    };
 
-  api.setState = multiplayerSetState;
+    api.setState = multiplayerSet;
 
-  const extendedApi = {
-    setState: multiplayerSetState,
-    getState: () => get() as TState,
-    subscribe: api.subscribe,
-  };
+    const baseState = config(multiplayerSet, get, api);
+    const initialState = baseState as Record<string, unknown>;
+    const nonFunctionKeys = extractNonFunctionKeys<T>(initialState);
+    const normalizedOptions = normalizeOptions(validatedOptions, nonFunctionKeys);
+    const logger = createLogger(normalizedOptions.logLevel);
+    const subscribedFields = normalizedOptions.subscribeToUpdatesFor();
+    const subscribedKeysArray = createPathPatterns(subscribedFields);
+    const publishedKeysArray = normalizedOptions.publishUpdatesFor().map(key => String(key));
 
-  // Initialize the store
-  const store = config(multiplayerSetState, () => get() as TState, extendedApi);
+    const hpkvStorageOptions: HPKVStorageOptions = {
+      namespace: normalizedOptions.namespace,
+      apiBaseUrl: normalizedOptions.apiBaseUrl,
+      apiKey: normalizedOptions.apiKey,
+      tokenGenerationUrl: normalizedOptions.tokenGenerationUrl,
+      clientConfig: normalizedOptions.clientConfig,
+      retryConfig: normalizedOptions.retryConfig,
+      zFactor: normalizedOptions.zFactor,
+    };
 
-  const initialState = (get() || store) as Record<string, unknown>;
-  const nonFunctionKeys = extractNonFunctionKeys<TState>(initialState);
-  const syncOptions = createDefaultSyncOptions(options, nonFunctionKeys);
-  const logger = createLogger(syncOptions.logLevel ?? LogLevel.INFO);
+    const client = createHPKVStorage(
+      hpkvStorageOptions,
+      subscribedKeysArray,
+      publishedKeysArray,
+      logger,
+    );
 
-  const subscribedFields = syncOptions.subscribeToUpdatesFor!();
-  const subscribedKeysArray = createPathPatterns(subscribedFields);
-  const publishedKeysArray = syncOptions.publishUpdatesFor!().map(key => String(key));
+    const originalApi: StoreApi<T> = {
+      ...api,
+      setState: originalSet,
+    };
 
-  const hpkvStorageOptions: HPKVStorageOptions = {
-    namespace: syncOptions.namespace,
-    apiBaseUrl: syncOptions.apiBaseUrl,
-    apiKey: syncOptions.apiKey,
-    tokenGenerationUrl: syncOptions.tokenGenerationUrl,
-    clientConfig: syncOptions.clientConfig,
-    retryConfig: syncOptions.retryConfig,
-  };
+    const services = ServiceFactory.createOrchestratorServices(client, normalizedOptions);
 
-  const client = createHPKVStorage(
-    hpkvStorageOptions,
-    subscribedKeysArray,
-    publishedKeysArray,
-    logger,
-  );
+    orchestrator = new MultiplayerOrchestrator(
+      client,
+      normalizedOptions,
+      originalApi,
+      baseState,
+      services,
+    );
 
-  const apiWithOriginalSetState = {
-    ...api,
-    setState: originalSetState,
-  };
-
-  orchestrator = new MultiplayerOrchestrator(
-    client,
-    syncOptions,
-    apiWithOriginalSetState as StoreApi<TState>,
-    store,
-  );
-
-  const multiplayerState: MultiplayerState = {
-    connectionState: ConnectionState.DISCONNECTED,
-    hasHydrated: false,
-    hydrate: () => orchestrator.hydrate(),
-    clearStorage: () => orchestrator.clearStorage(),
-    disconnect: () => orchestrator.disconnect(),
-    connect: () => orchestrator.connect(),
-    destroy: () => orchestrator.destroy(),
-    getConnectionStatus: () => orchestrator.getConnectionStatus(),
-    getMetrics: () => orchestrator.getMetrics(),
-  };
-
-  const storeWithMultiplayer = {
-    ...store,
-    multiplayer: {
-      ...multiplayerState,
+    const multiplayerState: MultiplayerState = {
       connectionState:
         client?.getConnectionStatus()?.connectionState ?? ConnectionState.DISCONNECTED,
       hasHydrated: false,
-    },
-  } as TStateWithMultiplayer;
+      hydrate: () => orchestrator.hydrate(),
+      clearStorage: () => orchestrator.clearStorage(),
+      disconnect: () => orchestrator.disconnect(),
+      connect: () => orchestrator.connect(),
+      destroy: () => orchestrator.destroy(),
+      getConnectionStatus: () => orchestrator.getConnectionStatus(),
+      getMetrics: () => orchestrator.getMetrics(),
+    };
 
-  initializeOrchestrator(orchestrator, logger);
-  setupWindowCleanup(orchestrator);
+    void initializeOrchestrator(orchestrator, logger);
+    setupWindowCleanup(orchestrator);
 
-  return storeWithMultiplayer;
+    return {
+      ...baseState,
+      multiplayer: multiplayerState,
+    };
+  };
 };
 
-export const multiplayer = impl as unknown as Multiplayer;
+export const multiplayer = multiplayerImpl as unknown as Multiplayer;

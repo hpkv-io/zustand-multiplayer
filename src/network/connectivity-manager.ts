@@ -1,3 +1,5 @@
+import { createLogger, LogLevel } from '../monitoring/logger';
+
 /**
  * Connectivity change listener function type
  */
@@ -14,9 +16,10 @@ export type CleanupFunction = () => void;
  */
 export class BrowserConnectivityManager {
   private isOnline: boolean;
-  private listeners: Set<ConnectivityListener> = new Set();
-  private isBrowser: boolean;
+  private readonly listeners: Set<ConnectivityListener> = new Set();
+  private readonly isBrowser: boolean;
   private isDestroyed: boolean = false;
+  private readonly logger = createLogger(LogLevel.WARN);
 
   constructor() {
     this.isBrowser = typeof window !== 'undefined' && typeof navigator !== 'undefined';
@@ -30,14 +33,14 @@ export class BrowserConnectivityManager {
     }
   }
 
-  private handleOnline = (): void => {
+  private readonly handleOnline = (): void => {
     if (this.isDestroyed) return;
 
     this.isOnline = true;
     this.notifyListeners(true);
   };
 
-  private handleOffline = (): void => {
+  private readonly handleOffline = (): void => {
     if (this.isDestroyed) return;
 
     this.isOnline = false;
@@ -51,7 +54,9 @@ export class BrowserConnectivityManager {
       try {
         listener(isOnline);
       } catch (error) {
-        console.warn('Error in connectivity listener:', error);
+        this.logger.warn('Error in connectivity listener', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -63,7 +68,7 @@ export class BrowserConnectivityManager {
    */
   addListener(listener: ConnectivityListener): CleanupFunction {
     if (this.isDestroyed) {
-      console.warn('Attempting to add listener to destroyed connectivity manager');
+      this.logger.warn('Attempting to add listener to destroyed connectivity manager');
       return () => {};
     }
 

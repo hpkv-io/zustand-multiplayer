@@ -5,9 +5,9 @@ import {
   CacheManager,
   PathExtractionCache,
   DeepEqualityCache,
-} from '../../../src/utils/cache-manager';
+} from '../../src/utils/cache-manager';
 
-describe('LRUCache', () => {
+describe('LRUCache Unit Tests', () => {
   let cache: LRUCache<string, number>;
 
   beforeEach(() => {
@@ -58,7 +58,6 @@ describe('LRUCache', () => {
       cache.set('key3', 300);
       expect(cache.size).toBe(3);
 
-      // Adding a 4th item should evict the first
       cache.set('key4', 400);
       expect(cache.size).toBe(3);
       expect(cache.has('key1')).toBe(false);
@@ -72,10 +71,8 @@ describe('LRUCache', () => {
       cache.set('key2', 200);
       cache.set('key3', 300);
 
-      // Access key1 to make it recently used
       cache.get('key1');
 
-      // Adding a 4th item should now evict key2 (least recently used)
       cache.set('key4', 400);
       expect(cache.has('key1')).toBe(true);
       expect(cache.has('key2')).toBe(false);
@@ -100,8 +97,8 @@ describe('LRUCache', () => {
 
     it('should provide statistics', () => {
       cache.set('key1', 100);
-      cache.get('key1'); // hit
-      cache.get('key2'); // miss
+      cache.get('key1');
+      cache.get('key2');
 
       const stats = cache.getStats();
       expect(stats.hits).toBe(1);
@@ -161,10 +158,8 @@ describe('PathExtractionCache', () => {
     const state = { user: { name: 'John' } };
     const paths = [{ path: ['user', 'name'], value: 'John' }];
 
-    // Set cache entry
     cache.set(state, [], paths);
 
-    // Get cache entry
     const result = cache.get(state, []);
     expect(result).toEqual(paths);
   });
@@ -201,13 +196,10 @@ describe('DeepEqualityCache', () => {
     const obj1 = { name: 'John' };
     const obj2 = { name: 'John' };
 
-    // First call should miss cache
     expect(cache.get(obj1, obj2)).toBeUndefined();
 
-    // Set result
     cache.set(obj1, obj2, true);
 
-    // Second call should hit cache
     expect(cache.get(obj1, obj2)).toBe(true);
   });
 
@@ -263,7 +255,6 @@ describe('CacheManager', () => {
 
   describe('Cache Management', () => {
     it('should clear all caches', () => {
-      // Populate caches
       cacheManager.storageKeyCache.set('key1', 'value1');
       cacheManager.stateReconstructionCache.set('key2', {});
 
@@ -271,10 +262,8 @@ describe('CacheManager', () => {
       cacheManager.pathExtractionCache.set(state, [], []);
       cacheManager.deepEqualityCache.set({ a: 1 }, { a: 1 }, true);
 
-      // Clear all
       cacheManager.clearAll();
 
-      // Verify all caches are empty
       expect(cacheManager.storageKeyCache.size).toBe(0);
       expect(cacheManager.stateReconstructionCache.size).toBe(0);
       expect(cacheManager.pathExtractionCache.get(state, [])).toBeUndefined();
@@ -282,7 +271,6 @@ describe('CacheManager', () => {
     });
 
     it('should provide comprehensive statistics', () => {
-      // Add some cache entries
       cacheManager.storageKeyCache.set('path1', 'key1');
       cacheManager.storageKeyCache.set('path2', 'key2');
 
@@ -299,14 +287,13 @@ describe('CacheManager', () => {
     it('should handle many cache operations efficiently', () => {
       const startTime = performance.now();
 
-      // Perform many operations
       for (let i = 0; i < 1000; i++) {
         cacheManager.storageKeyCache.set(`key${i}`, `value${i}`);
         cacheManager.storageKeyCache.get(`key${i}`);
       }
 
       const endTime = performance.now();
-      expect(endTime - startTime).toBeLessThan(100); // Should complete within 100ms
+      expect(endTime - startTime).toBeLessThan(100);
     });
   });
 });

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(rm:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npm test)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run check:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run test:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run analyze:*)",
+      "Bash(node:*)",
+      "Bash(git checkout:*)",
+      "Bash(mv:*)",
+      "Bash(npm pack:*)",
+      "Bash(cp:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(npx prettier:*)"
+    ],
+    "deny": []
+  }
+}

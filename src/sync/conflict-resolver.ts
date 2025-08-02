@@ -1,4 +1,4 @@
-import { Logger } from '../monitoring/logger';
+import type { Logger } from '../monitoring/logger';
 import { generateId, getCurrentTimestamp } from '../utils';
 
 export interface StateChange<TState> {
@@ -33,7 +33,7 @@ export class ConflictResolutionError extends Error {
 }
 
 export class ConflictResolver<TState> {
-  constructor(private logger: Logger) {}
+  constructor(private readonly logger: Logger) {}
 
   detectConflicts(
     staleState: TState,
@@ -54,8 +54,12 @@ export class ConflictResolver<TState> {
         const currentRemoteValue = remoteStateMap.get(String(fieldKey));
 
         if (staleValue !== currentRemoteValue && pendingValue !== currentRemoteValue) {
-          this.logger.debug(`Conflict detected for field ${String(fieldKey)}`, {
+          this.logger.debug('State conflict detected', {
             operation: 'conflict-detection',
+            field: String(fieldKey),
+            localValueType: typeof staleValue,
+            remoteValueType: typeof currentRemoteValue,
+            pendingValueType: typeof pendingValue,
           });
 
           conflicts.push({

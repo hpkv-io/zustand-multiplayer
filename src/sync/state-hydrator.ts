@@ -1,10 +1,10 @@
-import { Logger } from '../monitoring/logger';
-import { PerformanceMonitor } from '../monitoring/profiler';
-import { HPKVStorage } from '../storage/hpkv-storage';
-import { StorageKeyManager } from '../storage/storage-key-manager';
+import { pathFromArray, setValue } from '../core/state-manager';
+import type { Logger } from '../monitoring/logger';
+import type { PerformanceMonitor } from '../monitoring/profiler';
+import type { HPKVStorage } from '../storage/hpkv-storage';
+import type { StorageKeyManager } from '../storage/storage-key-manager';
 import { HydrationError } from '../types/multiplayer-types';
 import { normalizeError, getCurrentTimestamp } from '../utils';
-import { PathManager } from '../utils/path-manager';
 
 type StateReconstruction = Record<string, unknown>;
 
@@ -12,8 +12,8 @@ type StateReconstruction = Record<string, unknown>;
  * Safely merges nested paths into a state object using PathManager
  */
 function setNestedPath(target: StateReconstruction, path: string[], value: unknown): void {
-  const statePath = PathManager.fromArray(path);
-  PathManager.setValue(target, statePath, value);
+  const statePath = pathFromArray(path);
+  setValue(target, statePath, value);
 }
 
 // ============================================================================
@@ -26,10 +26,10 @@ export class StateHydrator<TState> {
   private hasHydrated = false;
 
   constructor(
-    private client: HPKVStorage,
-    private logger: Logger,
-    private performanceMonitor: PerformanceMonitor,
-    private keyManager: StorageKeyManager,
+    private readonly client: HPKVStorage,
+    private readonly logger: Logger,
+    private readonly performanceMonitor: PerformanceMonitor,
+    private readonly keyManager: StorageKeyManager,
   ) {}
 
   async hydrate(
@@ -48,9 +48,10 @@ export class StateHydrator<TState> {
       return;
     }
 
-    this.logger.debug('Starting hydration', {
-      operation: 'hydration',
+    this.logger.debug('Starting state hydration from remote storage', {
+      operation: 'hydration-start',
       clientId: this.client.getClientId(),
+      isAlreadyHydrated: this.hasHydrated,
     });
     this.isHydrating = true;
 
@@ -84,17 +85,26 @@ export class StateHydrator<TState> {
       const reconstructedState = this.reconstructStateFromItems(allItems);
 
       this.invokeOnHydrateCallback(reconstructedState, onHydrate);
-      this.logger.debug(`Reconstructed state : ${JSON.stringify(reconstructedState)}`, {
-        operation: 'hydration',
+      this.logger.debug('Successfully reconstructed state from remote items', {
+        operation: 'hydration-reconstruct',
+        itemCount: allItems.size,
+        stateKeys: Object.keys(reconstructedState),
+        clientId: this.client.getClientId(),
       });
       await applyStateChange(reconstructedState, false, true);
+
+      // Add a small delay to ensure all state updates and side effects have completed
+      // before marking hydration as complete. This prevents race conditions where
+      // hasHydrated=true but state updates are still propagating.
+      await new Promise(resolve => setTimeout(resolve, 0));
 
       this.hasHydrated = true;
       this.recordHydrationMetrics(startTime);
 
-      this.logger.debug(`Hydrated state from database`, {
-        operation: 'hydration',
+      this.logger.debug('State hydration completed successfully', {
+        operation: 'hydration-complete',
         clientId: this.client.getClientId(),
+        duration: startTime ? getCurrentTimestamp() - startTime : undefined,
       });
     } catch (error) {
       this.logger.error('Hydration failed', normalizeError(error), { operation: 'hydration' });

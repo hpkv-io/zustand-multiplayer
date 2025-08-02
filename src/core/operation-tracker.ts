@@ -5,7 +5,7 @@ export interface OperationTracker {
 }
 
 export class OperationTrackerImpl implements OperationTracker {
-  private runningOperations: Set<Promise<unknown>> = new Set();
+  private readonly runningOperations: Set<Promise<unknown>> = new Set();
 
   public trackOperation<T>(operation: Promise<T>): Promise<T> {
     this.runningOperations.add(operation);

@@ -1,7 +1,8 @@
-import { Logger } from '../monitoring/logger';
+import type { Logger } from '../monitoring/logger';
 import { HydrationError } from '../types/multiplayer-types';
 import { normalizeError, getCurrentTimestamp, generateId } from '../utils';
-import { StateChange } from './conflict-resolver';
+import { MAX_PENDING_CHANGES } from '../utils/constants';
+import type { StateChange } from './conflict-resolver';
 
 // ============================================================================
 // Sync Queue Manager
@@ -11,17 +12,34 @@ export class SyncQueueManager<TState> {
   private pendingChanges: StateChange<TState>[] = [];
   private isProcessing = false;
 
-  constructor(private logger: Logger) {}
+  constructor(private readonly logger: Logger) {}
 
   addPendingChange(change: Omit<StateChange<TState>, 'timestamp' | 'id'>): void {
+    // Check if we've reached the maximum number of pending changes
+    if (this.pendingChanges.length >= MAX_PENDING_CHANGES) {
+      this.logger.warn('Maximum pending changes reached, dropping oldest change', {
+        operation: 'sync-queue-add',
+        queueSize: this.pendingChanges.length,
+        maxChanges: MAX_PENDING_CHANGES,
+      });
+
+      // Remove the oldest change to make room
+      this.pendingChanges.shift();
+    }
+
     const fullChange: StateChange<TState> = {
       ...change,
       timestamp: getCurrentTimestamp(),
       id: generateId(),
     };
-    this.logger.debug(`Adding pending change : ${JSON.stringify(fullChange)}`, {
-      operation: 'sync-queue',
+
+    this.logger.debug('Adding change to offline queue', {
+      operation: 'sync-queue-add',
+      changeId: fullChange.id,
+      queueSize: this.pendingChanges.length + 1,
+      isFunction: typeof change.partial === 'function',
     });
+
     this.pendingChanges.push(fullChange);
   }
 
@@ -45,13 +63,21 @@ export class SyncQueueManager<TState> {
 
     this.isProcessing = true;
 
+    this.logger.debug('Starting to process offline change queue', {
+      operation: 'sync-queue-start',
+      changeCount: this.pendingChanges.length,
+    });
+
     try {
       const changesToProcess = [...this.pendingChanges];
       this.pendingChanges = [];
 
       for (const change of changesToProcess) {
-        this.logger.debug(`Processing change : ${JSON.stringify(change)}`, {
-          operation: 'sync-queue',
+        this.logger.debug('Processing queued state change', {
+          operation: 'sync-queue-process',
+          changeId: change.id,
+          age: getCurrentTimestamp() - change.timestamp,
+          isFunction: typeof change.partial === 'function',
         });
         await applyStateChange(change.partial, change.replace);
       }

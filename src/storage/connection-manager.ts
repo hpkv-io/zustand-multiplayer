@@ -1,7 +1,5 @@
-import {
-  HPKVSubscriptionClient,
-  ConnectionState as HPKVConnectionState,
-} from '@hpkv/websocket-client';
+import type { HPKVSubscriptionClient } from '@hpkv/websocket-client';
+import { ConnectionState as HPKVConnectionState } from '@hpkv/websocket-client';
 
 export class ConnectionManager {
   private connectionState: HPKVConnectionState = HPKVConnectionState.DISCONNECTED;

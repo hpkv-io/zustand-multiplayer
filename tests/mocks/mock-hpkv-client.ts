@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
-import {
-  ConnectionState,
+import type {
   ConnectionStats,
   ConnectionConfig,
   HPKVResponse,
@@ -8,37 +7,31 @@ import {
   HPKVNotificationResponse,
   RangeQueryOptions,
 } from '@hpkv/websocket-client';
+import { ConnectionState } from '@hpkv/websocket-client';
 
-// Simulated server-side storage
 const globalHPKVStore = new Map<string, string>();
 const activeClients = new Set<MockHPKVSubscriptionClient>();
 
-// Token information extracted from JWT-like token
 interface TokenInfo {
   subscribeKeys: string[];
   accessPattern?: string;
 }
 
-// Simulated token decoder
 function decodeToken(token: string): TokenInfo {
-  // In real implementation, this would decode JWT
-  // For mock, we'll encode info in base64
   try {
-    const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
+    const decoded = JSON.parse(Buffer.from(token, 'base64').toString()) as TokenInfo;
     return {
-      subscribeKeys: decoded.subscribeKeys || [],
+      subscribeKeys: decoded.subscribeKeys ?? [],
       accessPattern: decoded.accessPattern,
     };
   } catch {
-    // Default token for testing
     return {
       subscribeKeys: [],
-      accessPattern: '.*', // Allow all by default
+      accessPattern: '.*',
     };
   }
 }
 
-// Helper to check if a key matches access pattern
 function matchesAccessPattern(key: string, pattern?: string): boolean {
   if (!pattern) return true;
   try {
@@ -49,23 +42,41 @@ function matchesAccessPattern(key: string, pattern?: string): boolean {
   }
 }
 
-// Helper to check if a key matches any subscription pattern
+function isObject(value: any): boolean {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function deepMerge(target: any, source: any): any {
+  if (!isObject(target) || !isObject(source)) {
+    return source;
+  }
+
+  const result = { ...target };
+
+  for (const key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      if (isObject(target[key]) && isObject(source[key])) {
+        result[key] = deepMerge(target[key], source[key]);
+      } else {
+        result[key] = source[key];
+      }
+    }
+  }
+
+  return result;
+}
+
 function matchesSubscriptionPattern(key: string, subscribeKeys: string[]): boolean {
   return subscribeKeys.some(pattern => {
-    // Exact match - this should handle most existing tests
     if (pattern === key) {
       return true;
     }
 
-    // Pattern matching for wildcard subscriptions
     if (pattern.includes('*')) {
-      // Simple wildcard matching
-      // Convert "namespace:*" to match "namespace:anything"
-      // Convert "namespace:field:*" to match "namespace:field:anything"
       const escapedPattern = pattern
         .split('*')
-        .map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')) // Escape regex special chars
-        .join('.*'); // Replace * with .*
+        .map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
 
       try {
         const regex = new RegExp(`^${escapedPattern}$`);
@@ -76,10 +87,9 @@ function matchesSubscriptionPattern(key: string, subscribeKeys: string[]): boole
       }
     }
 
-    // Support for explicit regex patterns (if the pattern starts and ends with /)
     if (pattern.startsWith('/') && pattern.endsWith('/')) {
       try {
-        const regexPattern = pattern.slice(1, -1); // Remove leading and trailing /
+        const regexPattern = pattern.slice(1, -1);
         const regex = new RegExp(regexPattern);
         return regex.test(key);
       } catch (error) {
@@ -92,15 +102,13 @@ function matchesSubscriptionPattern(key: string, subscribeKeys: string[]): boole
   });
 }
 
-// Broadcast changes to all subscribed clients
-function broadcastChange(key: string, value: string | null, sourceClientId: string) {
+function broadcastChange(key: string, value: string | null, excludeClientId?: string) {
   activeClients.forEach(client => {
     if (client.getConnectionState() !== ConnectionState.CONNECTED) return;
+    if (excludeClientId && client.clientId === excludeClientId) return;
     const tokenInfo = client.getTokenInfo();
 
-    // Check if the key matches any subscription pattern
     if (matchesSubscriptionPattern(key, tokenInfo.subscribeKeys)) {
-      // Simulate async notification
       setImmediate(() => {
         client.notifySubscribers({
           type: 'notification',
@@ -115,12 +123,12 @@ function broadcastChange(key: string, value: string | null, sourceClientId: stri
 
 export class MockHPKVSubscriptionClient extends EventEmitter {
   private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
-  private connectionStats: ConnectionStats;
-  private subscribers = new Map<string, HPKVEventHandler>();
-  private tokenInfo: TokenInfo;
+  private readonly connectionStats: ConnectionStats;
+  private readonly subscribers = new Map<string, HPKVEventHandler>();
+  private readonly tokenInfo: TokenInfo;
   private connected = false;
   private reconnectAttempts = 0;
-  private messagesPending = 0;
+  private readonly messagesPending = 0;
   private shouldFailOperations = false;
   private operationDelay = 10;
   private connectPromise: Promise<void> | null = null;
@@ -128,9 +136,9 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
   public readonly clientId: string;
 
   constructor(
-    private token: string,
-    private baseUrl: string,
-    private config?: ConnectionConfig,
+    private readonly token: string,
+    private readonly baseUrl: string,
+    private readonly config?: ConnectionConfig,
   ) {
     super();
     this.clientId = `mock_client_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
@@ -143,7 +151,6 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       connectionState: ConnectionState.DISCONNECTED,
     };
 
-    // Register this client
     activeClients.add(this);
   }
 
@@ -166,10 +173,8 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
   private async performConnect(): Promise<void> {
     this.updateConnectionState(ConnectionState.CONNECTING);
 
-    // Simulate connection delay
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
-    // Simulate connection success
     this.connected = true;
     this.reconnectAttempts = 0;
     this.updateConnectionState(ConnectionState.CONNECTED);
@@ -193,7 +198,6 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
   }
 
   private async performDisconnect(): Promise<void> {
-    // Simulate disconnect delay
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     this.connected = false;
@@ -237,12 +241,10 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       return { code: 500, error: 'Not connected' };
     }
 
-    // Check access permission
     if (!matchesAccessPattern(key, this.tokenInfo.accessPattern)) {
       return { code: 403, error: 'Access denied' };
     }
 
-    // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     const value = globalHPKVStore.get(key);
@@ -266,24 +268,19 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       return { code: 500, error: 'Not connected' };
     }
 
-    // Check access permission
     if (!matchesAccessPattern(key, this.tokenInfo.accessPattern)) {
       return { code: 403, error: 'Access denied' };
     }
 
-    // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
-    // Check if this is a deletion request (when value contains null in the stored value)
     try {
-      const parsedValue = JSON.parse(value);
+      const parsedValue = JSON.parse(value) as { value: string | null };
       if (parsedValue && typeof parsedValue === 'object' && parsedValue.value === null) {
-        // This is a deletion request - remove the key from storage
         const existed = globalHPKVStore.has(key);
         globalHPKVStore.delete(key);
 
         if (existed) {
-          // Broadcast deletion to other clients
           broadcastChange(key, null, this.clientId);
         }
 
@@ -293,27 +290,38 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
           key,
         };
       }
-    } catch {
-      // If not JSON or parsing fails, continue with normal set operation
-    }
+    } catch {}
 
     if (partialUpdate && globalHPKVStore.has(key)) {
-      // Simulate JSON patching for partial updates
       const existingValue = globalHPKVStore.get(key)!;
       try {
-        const existing = JSON.parse(existingValue);
-        const update = JSON.parse(value);
-        const merged = { ...existing, ...update };
+        const existing = JSON.parse(existingValue) as {
+          value: any;
+          clientId: string;
+          timestamp: number;
+        };
+        const update = JSON.parse(value) as { value: any; clientId: string; timestamp: number };
+
+        let mergedValue;
+        if (isObject(existing.value) && isObject(update.value)) {
+          mergedValue = deepMerge(existing.value, update.value);
+        } else {
+          mergedValue = update.value;
+        }
+
+        const merged = {
+          ...existing,
+          ...update,
+          value: mergedValue,
+        };
         globalHPKVStore.set(key, JSON.stringify(merged));
       } catch {
-        // If not JSON, just append
         globalHPKVStore.set(key, existingValue + value);
       }
     } else {
       globalHPKVStore.set(key, value);
     }
 
-    // Broadcast to other clients
     broadcastChange(key, value, this.clientId);
 
     return {
@@ -333,19 +341,16 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       return { code: 500, error: 'Not connected' };
     }
 
-    // Check access permission
     if (!matchesAccessPattern(key, this.tokenInfo.accessPattern)) {
       return { code: 403, error: 'Access denied' };
     }
 
-    // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     const existed = globalHPKVStore.has(key);
     globalHPKVStore.delete(key);
 
     if (existed) {
-      // Broadcast deletion to other clients
       broadcastChange(key, null, this.clientId);
     }
 
@@ -365,12 +370,10 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       return { code: 500, error: 'Not connected' };
     }
 
-    // Check access permission
     if (!matchesAccessPattern(key, this.tokenInfo.accessPattern)) {
       return { code: 403, error: 'Access denied' };
     }
 
-    // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     const currentValue = globalHPKVStore.get(key);
@@ -379,7 +382,6 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
 
     globalHPKVStore.set(key, newValue.toString());
 
-    // Broadcast to other clients
     broadcastChange(key, newValue.toString(), this.clientId);
 
     return {
@@ -410,18 +412,16 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       return { code: 500, error: 'Not connected' };
     }
 
-    // Simulate async operation
     await new Promise(resolve => setTimeout(resolve, this.operationDelay));
 
     const sortedKeys = Array.from(globalHPKVStore.keys()).sort();
     const keysInRange = sortedKeys.filter(key => key >= startKey && key < endKey);
 
-    // Filter by access pattern
     const allowedKeys = keysInRange.filter(key =>
       matchesAccessPattern(key, this.tokenInfo.accessPattern),
     );
 
-    const limit = options?.limit || 1000;
+    const limit = options?.limit ?? 1000;
     const results = allowedKeys.slice(0, limit).map(key => ({
       key,
       value: globalHPKVStore.get(key)!,
@@ -445,12 +445,8 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       throw new Error('Not connected');
     }
 
-    // Extract namespace from access pattern
-    // The access pattern typically includes the namespace as a prefix
-    // For example: "test-namespace-.*" or "my-app-.*"
-    const pattern = this.tokenInfo.accessPattern || '.*';
+    const pattern = this.tokenInfo.accessPattern ?? '.*';
 
-    // Find all keys that match the access pattern
     const keysToDelete: string[] = [];
     for (const key of globalHPKVStore.keys()) {
       if (matchesAccessPattern(key, pattern)) {
@@ -458,12 +454,12 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       }
     }
 
-    // Delete all matching keys
-    for (const key of keysToDelete) {
-      globalHPKVStore.delete(key);
-      // Broadcast deletion to other clients
-      broadcastChange(key, null, this.clientId);
-    }
+    await new Promise(() => {
+      for (const key of keysToDelete) {
+        globalHPKVStore.delete(key);
+        broadcastChange(key, null, this.clientId);
+      }
+    });
   }
 
   getConnectionStats(): ConnectionStats {
@@ -486,7 +482,6 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     this.connectionStats.isConnected = state === ConnectionState.CONNECTED;
   }
 
-  // Helper method for testing
   getTokenInfo(): TokenInfo {
     return this.tokenInfo;
   }
@@ -498,7 +493,6 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     this.operationDelay = delay;
   }
 
-  // Test helper to simulate reconnection scenarios
   simulateDisconnect(): void {
     if (!this.connected) return;
 
@@ -506,7 +500,6 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     this.updateConnectionState(ConnectionState.DISCONNECTED);
     this.emit('disconnected');
 
-    // Simulate reconnection attempt
     if (
       this.config?.maxReconnectAttempts &&
       this.reconnectAttempts < this.config.maxReconnectAttempts
@@ -516,7 +509,7 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
       this.emit('reconnecting');
 
       setTimeout(() => {
-        if (this.reconnectAttempts >= (this.config?.maxReconnectAttempts || 3)) {
+        if (this.reconnectAttempts >= (this.config?.maxReconnectAttempts ?? 3)) {
           this.updateConnectionState(ConnectionState.DISCONNECTED);
           this.emit('reconnectFailed');
         } else {
@@ -528,17 +521,14 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     }
   }
 
-  // Test helper to clear global store
   static clearGlobalStore(): void {
     globalHPKVStore.clear();
   }
 
-  // Test helper to get global store state
   static getGlobalStore(): Map<string, string> {
     return new Map(globalHPKVStore);
   }
 
-  // Test helper to find active clients by namespace
   static findClientsByNamespace(namespace: string): MockHPKVSubscriptionClient[] {
     return Array.from(activeClients).filter(client => {
       const tokenInfo = client.getTokenInfo();
@@ -546,65 +536,11 @@ export class MockHPKVSubscriptionClient extends EventEmitter {
     });
   }
 
-  // Test helper to get all active clients
   static getActiveClients(): MockHPKVSubscriptionClient[] {
     return Array.from(activeClients);
   }
-
-  /**
-   * Test utility: Check if a client would receive notifications for a key
-   */
-  wouldReceiveNotificationForKey(key: string): boolean {
-    if (this.getConnectionState() !== ConnectionState.CONNECTED) return false;
-    return matchesSubscriptionPattern(key, this.tokenInfo.subscribeKeys);
-  }
-
-  /**
-   * Test utility: Get all subscription patterns for this client
-   */
-  getSubscriptionPatterns(): string[] {
-    return [...this.tokenInfo.subscribeKeys];
-  }
-
-  /**
-   * Test utility: Simulate pattern-based key changes for testing
-   */
-  static simulateGranularUpdates(
-    namespace: string,
-    updates: Array<{
-      field: string;
-      subKey?: string;
-      value: any;
-      operation?: 'set' | 'delete';
-    }>,
-  ) {
-    updates.forEach(update => {
-      const key = update.subKey
-        ? `${namespace}:${update.field}:${update.subKey}`
-        : `${namespace}:${update.field}`;
-
-      if (update.operation === 'delete') {
-        globalHPKVStore.delete(key);
-        broadcastChange(key, null, 'test_simulator');
-      } else {
-        const value =
-          typeof update.value === 'string' ? update.value : JSON.stringify(update.value);
-        globalHPKVStore.set(key, value);
-        broadcastChange(key, value, 'test_simulator');
-      }
-    });
-  }
-
-  /**
-   * Test utility: Get all keys that match a pattern
-   */
-  static getKeysMatchingPattern(pattern: string): string[] {
-    const keys = Array.from(globalHPKVStore.keys());
-    return keys.filter(key => matchesSubscriptionPattern(key, [pattern]));
-  }
 }
 
-// Mock factory to match the real implementation
 export const MockHPKVClientFactory = {
   createSubscriptionClient(
     token: string,
@@ -614,7 +550,6 @@ export const MockHPKVClientFactory = {
     return new MockHPKVSubscriptionClient(token, baseUrl, config);
   },
 
-  // Test helper methods
   findClientsByNamespace(namespace: string): MockHPKVSubscriptionClient[] {
     return MockHPKVSubscriptionClient.findClientsByNamespace(namespace);
   },
@@ -632,7 +567,6 @@ export const MockHPKVClientFactory = {
   },
 };
 
-// Helper to create test tokens
 export function createMockToken(subscribeKeys: string[], accessPattern?: string): string {
   const tokenData = {
     subscribeKeys,

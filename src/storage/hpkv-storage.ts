@@ -1,17 +1,20 @@
-import {
+import type {
   HPKVSubscriptionClient,
-  HPKVClientFactory,
   HPKVNotificationResponse,
   ConnectionStats,
-  ConnectionState as HPKVConnectionState,
   ConnectionConfig,
 } from '@hpkv/websocket-client';
+import { HPKVClientFactory, ConnectionState as HPKVConnectionState } from '@hpkv/websocket-client';
 import { TokenManager } from '../auth/token-manager';
-import { OperationTracker, createOperationTracker } from '../core/operation-tracker';
-import { Logger } from '../monitoring/logger';
+import type { OperationTracker } from '../core/operation-tracker';
+import { createOperationTracker } from '../core/operation-tracker';
+import type { Logger } from '../monitoring/logger';
 import { BrowserConnectivityManager } from '../network/connectivity-manager';
-import { RetryConfig, RetryManager, createRetryManager } from '../network/retry';
+import type { RetryConfig, RetryManager } from '../network/retry';
+import { createRetryManager, createErrorHandler } from '../network/retry';
+import type { ErrorContext } from '../types/multiplayer-types';
 import { generateClientId, normalizeError, getCurrentTimestamp } from '../utils';
+import { DEFAULT_RANGE_BATCH_SIZE } from '../utils/constants';
 import { ConnectionManager } from './connection-manager';
 import { StorageKeyManager } from './storage-key-manager';
 
@@ -23,11 +26,11 @@ export interface HPKVChangeEvent {
 export type HPKVChangeListener = (event: HPKVChangeEvent) => void;
 export type HPKVConnectionListener = (connectionState: HPKVConnectionState) => void;
 
-export type StoredValue = {
+export interface StoredValue {
   value: unknown;
   clientId?: string;
   timestamp?: number;
-};
+}
 
 export interface HPKVStorageOptions {
   namespace: string;
@@ -36,6 +39,7 @@ export interface HPKVStorageOptions {
   tokenGenerationUrl?: string;
   clientConfig?: ConnectionConfig;
   retryConfig?: RetryConfig;
+  zFactor?: number;
 }
 
 /**
@@ -122,25 +126,26 @@ export interface HPKVStorage {
  */
 class HPKVStorageImpl implements HPKVStorage {
   private client: HPKVSubscriptionClient | null = null;
-  private namespace: string;
-  private connectionManager: ConnectionManager;
+  private readonly namespace: string;
+  private readonly connectionManager: ConnectionManager;
   private connecting: boolean = false;
   private connectionPromise: Promise<void> | null = null;
   private subscriptionId: string | null = null;
-  private changeListeners: Set<HPKVChangeListener> = new Set();
-  private connectionListeners: Set<HPKVConnectionListener> = new Set();
-  private tokenManager: TokenManager;
+  private readonly changeListeners: Set<HPKVChangeListener> = new Set();
+  private readonly connectionListeners: Set<HPKVConnectionListener> = new Set();
+  private readonly tokenManager: TokenManager;
   private readonly subscribedKeys: string[];
   private readonly publishedKeys: string[];
   private readonly clientId: string;
-  private logger: Logger;
-  private cleanupCallbacks: Set<() => void> = new Set();
+  private readonly logger: Logger;
+  private readonly cleanupCallbacks: Set<() => void> = new Set();
   private isDestroyed: boolean = false;
-  private retryManager: RetryManager;
-  private storageOptions: HPKVStorageOptions;
-  private operationTracker: OperationTracker;
-  private connectivityManager: BrowserConnectivityManager;
-  private keyManager: StorageKeyManager;
+  private readonly retryManager: RetryManager;
+  private readonly storageOptions: HPKVStorageOptions;
+  private readonly operationTracker: OperationTracker;
+  private readonly connectivityManager: BrowserConnectivityManager;
+  private readonly keyManager: StorageKeyManager;
+  private readonly errorHandler: (error: unknown, context: ErrorContext) => void;
 
   public get isConnected(): boolean {
     return this.connectionManager.isConnected();
@@ -173,7 +178,8 @@ class HPKVStorageImpl implements HPKVStorage {
     this.connectionManager = new ConnectionManager(null);
     this.operationTracker = createOperationTracker();
     this.connectivityManager = new BrowserConnectivityManager();
-    this.keyManager = new StorageKeyManager(this.namespace);
+    this.keyManager = new StorageKeyManager(this.namespace, storageOptions.zFactor);
+    this.errorHandler = createErrorHandler(this.logger);
 
     // Initialize token manager
     this.tokenManager = new TokenManager({
@@ -216,7 +222,7 @@ class HPKVStorageImpl implements HPKVStorage {
 
   private handleBrowserOnline(): void {
     this.ensureConnection().catch(error => {
-      this.logger.error('Failed to reconnect after coming online', normalizeError(error), {
+      this.errorHandler(error, {
         operation: 'online-reconnect',
         clientId: this.clientId,
       });
@@ -231,10 +237,17 @@ class HPKVStorageImpl implements HPKVStorage {
   private async setupClient(): Promise<void> {
     this.checkDestroyed();
     return this.retryManager.executeWithRetry(async () => {
+      this.logger.debug('Setting up HPKV client connection', {
+        operation: 'client-setup',
+        clientId: this.clientId,
+        namespace: this.namespace,
+        subscribedKeys: this.subscribedKeys.length,
+      });
+
       const token = await this.tokenManager.generateToken();
       this.client = HPKVClientFactory.createSubscriptionClient(
         token,
-        this.storageOptions.apiBaseUrl!,
+        this.storageOptions.apiBaseUrl,
         this.storageOptions.clientConfig,
       );
       this.connectionManager.updateClient(this.client);
@@ -244,6 +257,11 @@ class HPKVStorageImpl implements HPKVStorage {
       await this.client.connect();
 
       this.connectionManager.updateConnectionState(HPKVConnectionState.CONNECTED);
+
+      this.logger.debug('HPKV client setup completed successfully', {
+        operation: 'client-setup-complete',
+        clientId: this.clientId,
+      });
     }, 'setupClient');
   }
 
@@ -271,7 +289,7 @@ class HPKVStorageImpl implements HPKVStorage {
     };
 
     const onError = () => {
-      this.logger.debug('Error in connection', {
+      this.logger.debug('WebSocket connection error occurred', {
         operation: 'connection-error',
         clientId: this.clientId,
       });
@@ -312,9 +330,9 @@ class HPKVStorageImpl implements HPKVStorage {
 
       try {
         const valueAsString = typeof data.value === 'string' ? data.value : String(data.value);
-        const newValue: StoredValue = JSON.parse(valueAsString);
+        const newValue = JSON.parse(valueAsString) as StoredValue;
 
-        if (newValue && newValue.clientId && newValue.clientId === this.clientId) {
+        if (newValue?.clientId && newValue.clientId === this.clientId) {
           return;
         }
 
@@ -324,9 +342,10 @@ class HPKVStorageImpl implements HPKVStorage {
         };
         this.notifyChangeListeners(changeEvent);
       } catch (error) {
-        this.logger.error(`Failed to process change for key ${data.key}`, normalizeError(error), {
+        this.errorHandler(error, {
           operation: 'change-processing',
           clientId: this.clientId,
+          key: data.key,
         });
       }
     });
@@ -344,7 +363,7 @@ class HPKVStorageImpl implements HPKVStorage {
       try {
         listener(event);
       } catch (error) {
-        this.logger.error('Error in global listener', normalizeError(error), {
+        this.errorHandler(error, {
           operation: 'change-listener',
           clientId: this.clientId,
         });
@@ -440,33 +459,32 @@ class HPKVStorageImpl implements HPKVStorage {
     const operation = async (): Promise<Map<string, unknown>> => {
       return this.retryManager.executeWithRetry(async () => {
         const range = this.keyManager.getNamespaceRange();
-        let allRecords: any[] = [];
+        let allRecords: { key: string; value: string }[] = [];
         let currentStart = range.start;
         let hasMore = true;
 
         // Keep fetching until all keys are retrieved
         while (hasMore) {
-          const batchResult = await this.client?.range(currentStart, range.end, { limit: 100 });
+          const batchResult = await this.client?.range(currentStart, range.end, {
+            limit: DEFAULT_RANGE_BATCH_SIZE,
+          });
 
-          if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
+          if (!batchResult?.records || batchResult.records.length === 0) {
             hasMore = false;
             break;
           }
 
           allRecords = allRecords.concat(batchResult.records);
 
-          // Check if there are more results
           if (batchResult.truncated) {
-            // Use the last key from this batch as the starting point for the next call
-            // We need to increment beyond the last key to avoid duplicates
             const lastKey = batchResult.records[batchResult.records.length - 1].key;
-            currentStart = lastKey + '\0'; // Add null character to get the next key
+            currentStart = `${lastKey}\0`; // Add null character to get the next key
           } else {
             hasMore = false;
           }
         }
 
-        const normalizedItems = allRecords.map(item => ({
+        const normalizedItems = allRecords.map((item: { key: string; value: string }) => ({
           key: this.keyManager.getKeyWithoutPrefix(item.key),
           value: JSON.parse(item.value) as StoredValue,
         }));
@@ -501,12 +519,15 @@ class HPKVStorageImpl implements HPKVStorage {
         timestamp: getCurrentTimestamp(),
       };
       const stringValue = JSON.stringify(valueToStore);
-      this.logger.debug(`Setting item: ${fullKey}`, {
+      this.logger.debug('Storing item to remote storage', {
         operation: 'setItem',
         clientId: this.clientId,
+        key: fullKey,
+        valueType: typeof value,
+        isPublishAllowed: this.keyManager.isKeyAllowedToPublish(logicalKey, this.publishedKeys),
       });
       await this.client?.set(fullKey, stringValue, true).catch(error => {
-        this.logger.error('Failed to set item', normalizeError(error), {
+        this.logger.error('Failed to store item', normalizeError(error), {
           operation: 'setItem',
           clientId: this.clientId,
         });
@@ -522,9 +543,10 @@ class HPKVStorageImpl implements HPKVStorage {
       return this.retryManager.executeWithRetry(async () => {
         const fullKey = this.keyManager.ensureNamespacePrefix(key);
         await this.client?.delete(fullKey);
-        this.logger.debug(`Removed item from storage. key: ${fullKey}`, {
+        this.logger.debug('Removed item from remote storage', {
           operation: 'removeItem',
           clientId: this.clientId,
+          key: fullKey,
         });
       }, `removeItem-${key}`);
     };
@@ -541,9 +563,11 @@ class HPKVStorageImpl implements HPKVStorage {
       let hasMore = true;
 
       while (hasMore) {
-        const batchResult = await this.client?.range(currentStart, range.end, { limit: 100 });
+        const batchResult = await this.client?.range(currentStart, range.end, {
+          limit: DEFAULT_RANGE_BATCH_SIZE,
+        });
 
-        if (!batchResult || !batchResult.records || batchResult.records.length === 0) {
+        if (!batchResult?.records || batchResult.records.length === 0) {
           hasMore = false;
           break;
         }
@@ -556,7 +580,7 @@ class HPKVStorageImpl implements HPKVStorage {
 
         if (batchResult.truncated) {
           const lastKey = batchResult.records[batchResult.records.length - 1].key;
-          currentStart = lastKey + '\0';
+          currentStart = `${lastKey}\0`;
         } else {
           hasMore = false;
         }

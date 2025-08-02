@@ -1,19 +1,20 @@
-import { ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
-import { Logger } from '../monitoring/logger';
+import type { ConnectionStats } from '@hpkv/websocket-client';
+import { ConnectionState } from '@hpkv/websocket-client';
+import type { Logger } from '../monitoring/logger';
 import { normalizeError, clearTimeoutSafely } from '../utils';
-import { HPKVStorage } from './hpkv-storage';
+import type { HPKVStorage } from './hpkv-storage';
 
 // ============================================================================
-// Storage Manager
+// Client Manager
 // ============================================================================
 
-export class StorageManager {
-  private connectionListeners: Array<(state: ConnectionState) => void> = [];
+export class ClientManager {
+  private readonly connectionListeners: Array<(state: ConnectionState) => void> = [];
   private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    private client: HPKVStorage,
-    private logger: Logger,
+    private readonly client: HPKVStorage,
+    private readonly logger: Logger,
   ) {
     this.setupConnectionListener();
   }

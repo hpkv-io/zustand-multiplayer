@@ -1,5 +1,6 @@
+import type { StatePath } from '../core/state-manager';
+import { createPath } from '../core/state-manager';
 import { getCacheManager } from '../utils/cache-manager';
-import { PathManager, StatePath } from '../utils/path-manager';
 
 /**
  * Generic storage item interface
@@ -28,9 +29,15 @@ export interface NamespaceRange {
  * Manages storage keys and key mappings for the multiplayer system.
  */
 export class StorageKeyManager {
-  private cacheManager = getCacheManager();
+  private readonly cacheManager = getCacheManager();
+  private readonly namespacedPrefix: string;
 
-  constructor(private namespace: string) {}
+  constructor(
+    private readonly namespace: string,
+    private readonly zFactor?: number,
+  ) {
+    this.namespacedPrefix = zFactor !== undefined ? `${namespace}-${zFactor}` : namespace;
+  }
 
   /**
    * Create a storage key from a path array with caching
@@ -39,14 +46,14 @@ export class StorageKeyManager {
    */
   createStorageKey(path: string[]): string {
     const pathKey = path.join(':');
-    const cacheKey = `${this.namespace}:${pathKey}`;
+    const cacheKey = `${this.namespacedPrefix}:${pathKey}`;
 
     const cached = this.cacheManager.storageKeyCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
     }
 
-    const result = `${this.namespace}:${pathKey}`;
+    const result = `${this.namespacedPrefix}:${pathKey}`;
 
     this.cacheManager.storageKeyCache.set(cacheKey, result);
 
@@ -59,7 +66,7 @@ export class StorageKeyManager {
    * @returns Object with path array and granularity information
    */
   parseStorageKey(storageKey: string): StatePath {
-    const prefix = `${this.namespace}:`;
+    const prefix = `${this.namespacedPrefix}:`;
     let keyToParse = storageKey;
 
     if (storageKey.startsWith(prefix)) {
@@ -67,7 +74,7 @@ export class StorageKeyManager {
     }
 
     const path = keyToParse.split(':');
-    const statePath = PathManager.createPath(path);
+    const statePath = createPath(path);
 
     return statePath;
   }
@@ -78,7 +85,7 @@ export class StorageKeyManager {
    * @returns Full key with namespace prefix
    */
   getFullKey(key: string): string {
-    return `${this.namespace}:${key}`;
+    return `${this.namespacedPrefix}:${key}`;
   }
 
   /**
@@ -87,7 +94,7 @@ export class StorageKeyManager {
    * @returns Key without namespace prefix
    */
   getKeyWithoutPrefix(fullKey: string): string {
-    const prefix = `${this.namespace}:`;
+    const prefix = `${this.namespacedPrefix}:`;
     if (fullKey.startsWith(prefix)) {
       return fullKey.substring(prefix.length);
     }
@@ -112,7 +119,7 @@ export class StorageKeyManager {
    * @returns The logical key without namespace
    */
   extractLogicalKey(key: string): string {
-    if (key.startsWith(`${this.namespace}:`)) {
+    if (key.startsWith(`${this.namespacedPrefix}:`)) {
       return this.getKeyWithoutPrefix(key);
     }
     return key;
@@ -124,7 +131,7 @@ export class StorageKeyManager {
    * @returns Key with namespace prefix
    */
   ensureNamespacePrefix(key: string): string {
-    if (key.startsWith(`${this.namespace}:`)) {
+    if (key.startsWith(`${this.namespacedPrefix}:`)) {
       return key;
     }
     return this.getFullKey(key);
@@ -150,7 +157,7 @@ export class StorageKeyManager {
    * @returns The namespace string
    */
   getNamespace(): string {
-    return this.namespace;
+    return this.namespacedPrefix;
   }
 
   /**
@@ -159,8 +166,8 @@ export class StorageKeyManager {
    */
   getNamespaceRange(): NamespaceRange {
     return {
-      start: `${this.namespace}:`,
-      end: `${this.namespace}:\xff`,
+      start: `${this.namespacedPrefix}:`,
+      end: `${this.namespacedPrefix}:\xff`,
     };
   }
 

@@ -1,10 +1,10 @@
-import { ConnectionConfig, ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
+import type { ConnectionConfig, ConnectionState, ConnectionStats } from '@hpkv/websocket-client';
 import type { Draft } from 'immer';
-import { StoreMutatorIdentifier } from 'zustand/vanilla';
-import { LogLevel } from '../monitoring/logger';
-import { PerformanceMetrics } from '../monitoring/profiler';
-import { RetryConfig } from '../network/retry';
-import { ConflictInfo, ConflictResolution } from '../sync/conflict-resolver';
+import type { StoreMutatorIdentifier } from 'zustand/vanilla';
+import type { LogLevel } from '../monitoring/logger';
+import type { PerformanceMetrics } from '../monitoring/profiler';
+import type { RetryConfig } from '../network/retry';
+import type { ConflictInfo, ConflictResolution } from '../sync/conflict-resolver';
 
 // ============================================================================
 // Core Options and State Interfaces

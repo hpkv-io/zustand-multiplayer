@@ -1,4 +1,9 @@
-import { SerializableValue } from '../types/multiplayer-types';
+import type { SerializableValue } from '../types/multiplayer-types';
+import {
+  DEFAULT_CACHE_MAX_SIZE,
+  DEFAULT_CACHE_TTL,
+  DEFAULT_CACHE_CLEANUP_INTERVAL,
+} from './constants';
 import { getCurrentTimestamp } from './index';
 
 // ============================================================================
@@ -44,14 +49,14 @@ export interface CacheStats {
  * High-performance LRU cache with TTL support
  */
 export class LRUCache<K, V> {
-  private cache = new Map<K, CacheEntry<V>>();
-  private maxSize: number;
-  private ttl: number;
-  private cleanupInterval: number;
+  private readonly cache = new Map<K, CacheEntry<V>>();
+  private readonly maxSize: number;
+  private readonly ttl: number;
+  private readonly cleanupInterval: number;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   // Statistics
-  private stats = {
+  private readonly stats = {
     hits: 0,
     misses: 0,
     evictions: 0,
@@ -59,9 +64,9 @@ export class LRUCache<K, V> {
   };
 
   constructor(config: CacheConfig = {}) {
-    this.maxSize = config.maxSize || 1000;
-    this.ttl = config.ttl || 5 * 60 * 1000; // 5 minutes default
-    this.cleanupInterval = config.cleanupInterval || 60 * 1000; // 1 minute default
+    this.maxSize = config.maxSize ?? DEFAULT_CACHE_MAX_SIZE;
+    this.ttl = config.ttl ?? DEFAULT_CACHE_TTL;
+    this.cleanupInterval = config.cleanupInterval ?? DEFAULT_CACHE_CLEANUP_INTERVAL;
 
     this.startCleanupTimer();
   }
@@ -281,8 +286,8 @@ export class LRUCache<K, V> {
  * WeakMap-based cache for object references
  */
 export class WeakCache<K extends object, V> {
-  private cache = new WeakMap<K, V>();
-  private stats = {
+  private readonly cache = new WeakMap<K, V>();
+  private readonly stats = {
     hits: 0,
     misses: 0,
     sets: 0,
@@ -349,8 +354,11 @@ export class WeakCache<K extends object, V> {
  * Cache for path extraction results
  */
 export class PathExtractionCache {
-  private cache = new LRUCache<string, Array<{ path: string[]; value: SerializableValue }>>();
-  private hashCache = new WeakCache<object, string>();
+  private readonly cache = new LRUCache<
+    string,
+    Array<{ path: string[]; value: SerializableValue }>
+  >();
+  private readonly hashCache = new WeakCache<object, string>();
 
   /**
    * Get cached path extraction result
@@ -412,7 +420,7 @@ export class PathExtractionCache {
 
       return hash.toString(36);
     } catch {
-      return Date.now().toString(36) + Math.random().toString(36);
+      return getCurrentTimestamp().toString(36) + Math.random().toString(36);
     }
   }
 
@@ -438,12 +446,12 @@ export class PathExtractionCache {
  * Cache for deep equality comparisons
  */
 export class DeepEqualityCache {
-  private cache = new LRUCache<string, boolean>();
+  private readonly cache = new LRUCache<string, boolean>();
 
   /**
    * Get cached deep equality result
    */
-  get(a: any, b: any): boolean | undefined {
+  get(a: unknown, b: unknown): boolean | undefined {
     const key = this.generateKey(a, b);
     return this.cache.get(key);
   }
@@ -451,7 +459,7 @@ export class DeepEqualityCache {
   /**
    * Set cached deep equality result
    */
-  set(a: any, b: any, result: boolean): void {
+  set(a: unknown, b: unknown, result: boolean): void {
     const key = this.generateKey(a, b);
     this.cache.set(key, result);
   }
@@ -459,16 +467,16 @@ export class DeepEqualityCache {
   /**
    * Generate cache key for comparison
    */
-  private generateKey(a: any, b: any): string {
+  private generateKey(a: unknown, b: unknown): string {
     try {
-      const keyA = typeof a === 'object' ? JSON.stringify(a) : String(a);
-      const keyB = typeof b === 'object' ? JSON.stringify(b) : String(b);
+      const keyA = typeof a === 'object' ? JSON.stringify(a) : String(a as string);
+      const keyB = typeof b === 'object' ? JSON.stringify(b) : String(b as string);
 
       // Sort keys to ensure consistent ordering
       return keyA < keyB ? `${keyA}:${keyB}` : `${keyB}:${keyA}`;
     } catch {
       // Fallback for circular references
-      return `${Date.now()}:${Math.random()}`;
+      return `${getCurrentTimestamp()}:${Math.random()}`;
     }
   }
 
@@ -500,7 +508,7 @@ export class CacheManager {
   public readonly pathExtractionCache = new PathExtractionCache();
   public readonly deepEqualityCache = new DeepEqualityCache();
   public readonly storageKeyCache = new LRUCache<string, string>();
-  public readonly stateReconstructionCache = new LRUCache<string, any>();
+  public readonly stateReconstructionCache = new LRUCache<string, unknown>();
 
   private constructor() {}
 
