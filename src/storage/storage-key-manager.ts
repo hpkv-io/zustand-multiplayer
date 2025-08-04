@@ -6,31 +6,13 @@ export interface StatePath {
   isNested: boolean;
 }
 
-/**
- * Generic storage item interface
- */
-export interface StorageItem<T = unknown> {
-  key: string;
-  value: T;
-}
-
-/**
- * Storage key parsing result
- */
-export interface ParsedStorageKey {
-  path: string[];
-}
-
-/**
- * Namespace range query pattern
- */
 export interface NamespaceRange {
   start: string;
   end: string;
 }
 
 /**
- * Manages storage keys and key mappings for the multiplayer system.
+ * Manages storage keys and key mappings for the multiplayer.
  */
 export class StorageKeyManager {
   private readonly cacheManager = getCacheManager();
@@ -42,8 +24,6 @@ export class StorageKeyManager {
 
   /**
    * Create a storage key from a path array with caching
-   * @param path Array of path segments
-   * @returns Full storage key with namespace
    */
   createStorageKey(path: string[]): string {
     const pathKey = path.join(':');
@@ -63,8 +43,6 @@ export class StorageKeyManager {
 
   /**
    * Parse a storage key to extract path information
-   * @param storageKey The full storage key
-   * @returns Object with path array and granularity information
    */
   parseStorageKey(storageKey: string): StatePath {
     const prefix = `${this.namespacedPrefix}:`;
@@ -85,8 +63,6 @@ export class StorageKeyManager {
 
   /**
    * Prefixes a key with the namespace
-   * @param key Key to prefix
-   * @returns Full key with namespace prefix
    */
   getFullKey(key: string): string {
     return `${this.namespacedPrefix}:${key}`;
@@ -94,8 +70,6 @@ export class StorageKeyManager {
 
   /**
    * Removes the namespace prefix from a full key
-   * @param fullKey Key with namespace prefix
-   * @returns Key without namespace prefix
    */
   getKeyWithoutPrefix(fullKey: string): string {
     const prefix = `${this.namespacedPrefix}:`;
@@ -107,7 +81,6 @@ export class StorageKeyManager {
 
   /**
    * Gets the namespace for this key manager
-   * @returns The namespace string
    */
   getNamespace(): string {
     return this.namespacedPrefix;
@@ -115,7 +88,6 @@ export class StorageKeyManager {
 
   /**
    * Creates a range query pattern for namespace
-   * @returns Object with start and end patterns for range queries
    */
   getNamespaceRange(): NamespaceRange {
     return {

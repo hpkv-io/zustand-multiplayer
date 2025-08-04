@@ -5,36 +5,46 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![HPKV logo](assets/images/logo.png)
+## What is Multiplayer?
 
-**Real-time state synchronization for Zustand stores.** Build collaborative applications with automatic state sharing across multiple clients. The `multiplayer` middleware brings **state persistence** and **real-time synchronization** to Zustand stores, making it easy to build multiplayer applications with just a few lines of code.
+Multiplayer is a Zustand middleware that adds real-time synchronization capabilities to your stores. When you wrap your store with the multiplayer middleware, every state change is automatically:
+- **Synchronized** across all connected clients in real-time via WebSockets
+- **Persisted** to a distributed database with atomic operations
+- **Shared** with all connected users instantly
 
+**No WebSocket server needed!** Multiplayer is built on top of [HPKV's WebSocket API](https://hpkv.io/docs/websocket-api), so you don't need to set up or maintain any server infrastructure. Just [create a free HPKV API key](https://hpkv.io/signup) in a few clicks, configure your store options, and you're ready to go.
 
+Think of it as adding a "sync engine" to your existing Zustand store - turning any local state into shared, collaborative state that multiple users can interact with simultaneously.
 
-## What is Zustand Multiplayer?
+**Transform any Zustand store into a real-time synchronized multiplayer experience with just one line of code.**
 
-Zustand Multiplayer is a powerful middleware that transforms any Zustand store into a real-time collaborative state management system. Convert your existing Zustand stores to multiplayer stores in just a few steps with minimal code changes.
+```typescript
+// Before: Local Zustand store
+const useStore = create((set) => ({
+  todos: {},
+  addTodo: (text) => set(state => ...)
+}));
 
-### ✨ **Key Features**
+// After: Real-time multiplayer store
+const useStore = create(
+  multiplayer((set) => ({
+    todos: {},
+    addTodo: (text) => set(state => ...)
+  }), { namespace: 'my-app' })
+);
+```
 
-- **🔄 Real-time Synchronization** - Automatic state sharing across all connected clients using WebSockets
-- **💾 Persistent Storage** - All state changes are automatically stored in HPKV for durability and offline support
-- **🎯 Selective Sync** - Choose which parts of your state to share vs keep local using field-level controls
-- **🔧 Granular Storage** - Store individual items in Record fields for conflict-free collaboration (configurable depth)
-- **⚡ Performance Optimized** - Efficient change detection, minimal network traffic, and smart caching
-- **🔌 TypeScript Ready** - Full type safety with proper TypeScript integration and IntelliSense support
-- **📊 Monitoring & Debugging** - Comprehensive performance metrics and connection status monitoring
-- **🔐 Secure Authentication** - Token-based authentication with server-side validation
+That's it! Your store now syncs in real-time across all connected clients. 🎉
 
+## Why Zustand Multiplayer?
 
-### 🎯 **Usage Examples**
+Building real-time collaborative features is complex. You need WebSockets, conflict resolution, state persistence, and synchronization logic. Zustand Multiplayer handles all of this for you:
 
-- **Collaborative Apps** - Real-time document editing, live polls, shared whiteboards, collaborative forms
-- **Multiplayer Games** - Shared game state, player positions, scores, real-time leaderboards
-- **Team Dashboards** - Live metrics, shared settings, real-time notifications, collaborative workspaces
-- **Social Features** - Live comments, shared preferences, collaborative lists, group activities
-- **E-commerce** - Shared shopping carts, live inventory updates, collaborative wishlists
-- **IoT Applications** - Real-time sensor data, device control, shared dashboards
+- **🔄 Instant Synchronization** - State changes propagate to all clients in milliseconds
+- **💾 Automatic Persistence** - State survives page refreshes and reconnections
+- **🎯 Selective Sync** - Choose exactly what to share vs keep local
+- **⚡ Optimized Performance** - Granular updates, minimal network traffic
+- **🔌 Works Everywhere** - React, Node.js, vanilla JavaScript, Client, Server - anywhere Zustand works
 
 ## Installation
 
@@ -42,85 +52,42 @@ Zustand Multiplayer is a powerful middleware that transforms any Zustand store i
 npm install @hpkv/zustand-multiplayer zustand
 ```
 
-### Peer Dependencies
+## 5-Minute Quick Start
 
-- **zustand** ^5.0.3 - The core state management library
-- **@hpkv/websocket-client** - WebSocket client for real-time communication (installed automatically)
-- **immer** - Immutable state updates (installed automatically)
+### 1. Get Your API Credentials
 
-## Prerequisites
+Sign up at [hpkv.io](https://hpkv.io/signup) and get your API credentials from the [dashboard](https://hpkv.io/dashboard/api-keys).
 
-1. **Sign up at [hpkv.io](https://hpkv.io/signup)** - Create your free account
-2. **Get your API credentials** from the [dashboard](https://hpkv.io/dashboard/api-keys):
-   - **API Key** - For server-side authentication
-   - **Base URL** - Your HPKV API endpoint
-3. **Choose your authentication method**:
-   - **Client-side**: Set up a token generation endpoint (recommended for web apps)
-   - **Server-side**: Use API key directly (for Node.js servers)
-
-
-## Quick Start
-
-### 1. Create a Collaborative Todo Store
+### 2. Create a Multiplayer Store
 
 ```typescript
 // store.ts
 import { create } from 'zustand';
 import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
 
-interface Todo {
-  id: string;
-  text: string;
-  completed: boolean;
-  createdAt: number;
+interface AppState {
+  count: number;
+  increment: () => void;
 }
 
-interface TodoState {
-  todos: Record<string, Todo>;
-  addTodo: (text: string) => void;
-  toggleTodo: (id: string) => void;
-  removeTodo: (id: string) => void;
-}
-
-export const useTodoStore = create<WithMultiplayer<TodoState>>()(
+export const useStore = create<WithMultiplayer<AppState>>()(
   multiplayer(
     (set) => ({
-      todos: {},
-      
-      // Using Immer-style mutations for clean updates
-      addTodo: (text: string) => set((state) => {
-        const id = Date.now().toString();
-        state.todos[id] = {
-          id,
-          text,
-          completed: false,
-          createdAt: Date.now(),
-        };
-      }),
-      
-      toggleTodo: (id: string) => set((state) => {
-        if (state.todos[id]) {
-          state.todos[id].completed = !state.todos[id].completed;
-        }
-      }),
-      
-      removeTodo: (id: string) => set((state) => {
-        delete state.todos[id];
-      }),
+      count: 0,
+      increment: () => set((state) => ({ count: state.count + 1 })),
     }),
     {
-      namespace: 'collaborative-todos',
+      namespace: 'counter-app',  // Unique identifier for your app
       apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
-      tokenGenerationUrl: '/api/generate-token',
-      // zFactor: 1 is default - stores todos object as one key
+      tokenGenerationUrl: '/api/generate-token',  // Your auth endpoint
     }
   )
 );
 ```
 
-### 2. Setup Token Generation Endpoint
+### 3. Set Up Token Generation (Security)
 
-#### Express.js Example
+Create an endpoint to generate tokens for client authentication:
 
 ```typescript
 // pages/api/generate-token.ts (Next.js) or server.js (Express)
@@ -132,1088 +99,1064 @@ const tokenHelper = new TokenHelper(
 );
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  // Add your authentication logic here
+  // const user = await authenticate(req);
+  // if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  
+  const response = await tokenHelper.processTokenRequest(req.body);
+  res.status(200).json(response);
+}
+```
 
-  try {
-    // Add your authentication logic here
-    // const user = await authenticateUser(req.headers.authorization);
-    // if (!user) return res.status(401).json({ error: 'Unauthorized' });
+### 4. Use in Your App
 
-    // Generate token using the built-in handler
-    const response = await tokenHelper.processTokenRequest(req.body);
-    res.status(200).json(response);
-  } catch (error) {
-    console.error('Token generation failed:', error);
-    res.status(500).json({ error: 'Token generation failed' });
+```tsx
+// App.tsx
+import { useStore } from './store';
+
+function App() {
+  const { count, increment, multiplayer } = useStore();
+  
+  return (
+    <div>
+      <h1>Count: {count}</h1>
+      <button onClick={increment}>+1</button>
+      <p>Open this page in multiple tabs to see real-time sync!</p>
+      <p>Status: {multiplayer.connectionState}</p>
+    </div>
+  );
+}
+```
+
+That's it! Your app now syncs in real-time. Open it in multiple browser tabs to see the magic. ✨
+
+## Core Concepts
+
+### 🏷️ Namespaces - Your Sync Scope
+
+A namespace is a unique identifier that determines which stores sync together. Think of it as a "room" where all stores with the same namespace share state.
+
+```typescript
+// All stores with namespace 'team-dashboard' will sync together
+{ namespace: 'team-dashboard' }
+
+// Different namespaces = isolated data
+{ namespace: 'team-dashboard' }  // These sync together
+{ namespace: 'user-settings' }   // This is completely separate
+```
+
+**Best Practices:**
+- Use descriptive, unique namespaces: `todo-app-v1`, `game-room-${roomId}`
+- Version your namespaces when making breaking changes: `app-v1` → `app-v2`
+- Use dynamic namespaces for isolated sessions: `meeting-${meetingId}`
+
+### 🔐 Authentication - Client vs Server
+
+When creating a store using multiplayer, you either need to provide HPKV API key or a token generation url. As API key should never be exposed on client-side, for client-side usage always setup a token generation endpoint, but for server-side usage, you can use the API key directly.
+
+See the documentation on how to set up the token generation endpoint in the [Token Generation Guideline](/docs/TOKEN_API.md)
+
+**Client-side (Web Apps):**
+```typescript
+// Never expose API keys in client code!
+{
+  namespace: 'my-app',
+  apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL,
+  tokenGenerationUrl: '/api/generate-token',  // Secure backend endpoint
+}
+```
+
+**Server-side (Node.js):**
+```typescript
+// Safe to use API key directly on server
+{
+  namespace: 'my-app',
+  apiBaseUrl: process.env.HPKV_API_BASE_URL,
+  apiKey: process.env.HPKV_API_KEY,  // Direct API key usage
+}
+```
+
+### 🎯 Selective Synchronization
+
+By default, ```multiplayer``` syncs all the state with other clients, but it also allows you to control exactly what syncs and what stays local through ```sync``` option:
+
+```typescript
+const useStore = create(
+  multiplayer(
+    (set) => ({
+      // Shared data
+      sharedTodos: {},
+      teamSettings: {},
+      
+      // Local data
+      draftText: '',
+      userPreferences: {},
+      
+      // Actions...
+    }),
+    {
+      namespace: 'my-app',
+      // Only sync these fields
+      sync: ['sharedTodos', 'teamSettings'],
+      // Everything else stays local
+    }
+  )
+);
+```
+
+### 🔧 zFactor - Reduce chances of conflict
+
+The `zFactor` controls how deeply nested objects are stored, affecting conflict resolution and performance:
+
+- *Higher zFactor*: More storage granularity, less conflicts, potentially more calls over network for state upodates
+
+- *Lower zFactor*: Less storage granularity, more chances of conflict, reduce calls over network for state updates
+
+
+
+```typescript
+// Example state structure
+{
+  users: {
+    user1: { name: 'Alice', score: 10 },
+    user2: { name: 'Bob', score: 20 }
   }
 }
 ```
 
-#### Express with Authentication
+```
+zFactor: 0 (Atomic)          zFactor: 1 (Default)         zFactor: 2 (Granular)
+┌─────────────────┐          ┌──────────────┐             ┌─────────────────┐
+│ Store entire    │          │ Each user    │             │ Each property   │
+│ 'users' object  │          │ stored       │             │ stored          │
+│ as one unit     │          │ separately   │             │ separately      │
+└─────────────────┘          └──────────────┘             └─────────────────┘
+        ↓                            ↓                             ↓
+  users → {...}               users:user1 → {...}          users:user1:name → 'Alice'
+                             users:user2 → {...}          users:user1:score → 10
+                                                          users:user2:name → 'Bob'
+                                                          users:user2:score → 20
+```
+
+Adjust the zFactor to optimize the performance, conflict management and network saturation. If there are properties that usually are updated together, best is to adjust the zFactor in a way that stores all those properties in a single key, but if the properties are updated independently and concurrently by other users, adjust it to store each property in a single key.
+
+If you don't set zFactor option, the default zFactor is 2 (three levels of storage granularity from root)
+
+## Exapmle Recipes
+
+### 🗳️ Live Voting/Polling
 
 ```typescript
-// server.js
-import express from 'express';
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+const usePollStore = create(
+  multiplayer(
+    (set) => ({
+      votes: {} as Record<string, number>,
+      vote: (option: string) => set((state) => {
+        state.votes[option] = (state.votes[option] || 0) + 1;
+      }),
+    }),
+    { namespace: `poll-${pollId}` }
+  )
+);
+```
 
-const app = express();
-app.use(express.json());
+### 👥 Presence & Live Cursors
+
+```typescript
+const usePresenceStore = create(
+  multiplayer(
+    (set) => ({
+      users: {} as Record<string, { name: string; cursor: { x: number; y: number } }>,
+      updateCursor: (userId: string, x: number, y: number) => set((state) => {
+        state.users[userId] = { ...state.users[userId], cursor: { x, y } };
+      }),
+    }),
+    { 
+      namespace: 'collaborative-canvas',
+      zFactor: 2,  // Granular updates for smooth cursor movement
+    }
+  )
+);
+```
+
+### 🎮 Game State
+
+```typescript
+const useGameStore = create(
+  multiplayer(
+    (set) => ({
+      players: {} as Record<string, Player>,
+      gameState: 'waiting' as 'waiting' | 'playing' | 'finished',
+      scores: {} as Record<string, number>,
+      
+      joinGame: (playerId: string, name: string) => set((state) => {
+        state.players[playerId] = { id: playerId, name, ready: false };
+      }),
+      
+      updateScore: (playerId: string, points: number) => set((state) => {
+        state.scores[playerId] = (state.scores[playerId] || 0) + points;
+      }),
+    }),
+    { 
+      namespace: `game-room-${roomId}`,
+      zFactor: 1,  // Player-level granularity
+    }
+  )
+);
+```
+
+### 📝 Collaborative Forms
+
+```typescript
+const useFormStore = create(
+  multiplayer(
+    (set) => ({
+      formData: {},
+      fieldLocks: {} as Record<string, string>,  // Track who's editing what
+      
+      updateField: (field: string, value: any, userId: string) => set((state) => {
+        if (!state.fieldLocks[field] || state.fieldLocks[field] === userId) {
+          state.formData[field] = value;
+          state.fieldLocks[field] = userId;
+        }
+      }),
+      
+      releaseField: (field: string) => set((state) => {
+        delete state.fieldLocks[field];
+      }),
+    }),
+    {
+      namespace: `form-${formId}`,
+      sync: ['formData', 'fieldLocks'],  // Don't sync local validation errors
+    }
+  )
+);
+```
+
+### 🔔 Server-to-Client Broadcasting
+
+```typescript
+// Server-side (Node.js)
+import { createStore } from 'zustand/vanilla';
+
+const broadcastStore = createStore(
+  multiplayer(
+    (set) => ({
+      notifications: [] as Notification[],
+      broadcast: (message: string) => set((state) => ({
+        notifications: [...state.notifications, {
+          id: Date.now(),
+          message,
+          timestamp: new Date(),
+        }],
+      })),
+    }),
+    {
+      namespace: 'system-notifications',
+      apiKey: process.env.HPKV_API_KEY,  // Server uses API key directly
+    }
+  )
+);
+
+// Broadcast to all clients
+broadcastStore.getState().broadcast('System maintenance at 5 PM');
+```
+
+## Advanced Features
+
+### ⚡ Performance Optimization
+
+For applications with high-frequency updates, consider these optimization strategies:
+
+```typescript
+// Example: Optimizing a collaborative drawing app
+const useCanvasStore = create(
+  multiplayer(
+    (set) => ({
+      strokes: {},
+      currentStroke: null,
+      
+      // Batch updates for better performance
+      updateStroke: debounce((strokeId, points) => set((state) => {
+        state.strokes[strokeId] = points;
+      }), 100), // Debounce to max 10 updates/second. This should not exceed the rate limit for better performance
+    }),
+    {
+      namespace: 'canvas',
+      rateLimit: 10,    // Match your HPKV tier (Free: 10/s, Pro: 100/s)
+      zFactor: 1,       // Store each stroke separately
+    }
+  )
+);
+```
+
+**Performance Tips:**
+- **Set `rateLimit`** to match your HPKV tier to enable automatic throttling
+- **Use debouncing** for high-frequency events (mouse moves, typing)
+- **Batch updates** when possible to reduce network calls
+- **Choose appropriate `zFactor`** - higher values mean more granular updates but more keys
+
+### 🔄 Middleware Composition
+
+Zustand Multiplayer works seamlessly with other middlewares:
+
+```typescript
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { subscribeWithSelector } from 'zustand/middleware';
+import { multiplayer } from '@hpkv/zustand-multiplayer';
+
+const useStore = create(
+  multiplayer(
+    subscribeWithSelector(
+      immer((set) => ({
+        // Immer allows direct mutations
+        todos: {},
+        addTodo: (text: string) => set((state) => {
+          const id = Date.now().toString();
+          state.todos[id] = { id, text, completed: false };  // Direct mutation!
+        }),
+        toggleTodo: (id: string) => set((state) => {
+          state.todos[id].completed = !state.todos[id].completed;
+        }),
+      }))
+    ),
+    { namespace: 'todos-with-immer' }
+  )
+);
+
+// Subscribe to specific changes
+useStore.subscribe(
+  (state) => state.todos,
+  (todos) => console.log('Todos changed:', todos)
+);
+```
+
+### 📊 Monitoring & Debugging
+
+```typescript
+function ConnectionMonitor() {
+  const { multiplayer } = useStore();
+   
+  return (
+    <div>
+      <p>Status: {multiplayer.connectionState}</p>
+      <p>Round Trip Latency: {multiplayer.performanceMetrics.averageSyncTime}ms</p>
+      <button onClick={() => multiplayer.reHydrate()}>Force Sync</button>
+    </div>
+  );
+}
+```
+
+## TypeScript Usage Guide
+
+Zustand Multiplayer is built with TypeScript-first design and provides full type safety for your multiplayer stores.
+
+### Basic Type Setup
+
+Always use the `WithMultiplayer<T>` wrapper type to ensure proper typing:
+
+```typescript
+import { create } from 'zustand';
+import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
+
+interface TodoState {
+  todos: Record<string, Todo>;
+  filter: 'all' | 'active' | 'completed';
+  addTodo: (text: string) => void;
+  toggleTodo: (id: string) => void;
+  setFilter: (filter: TodoState['filter']) => void;
+}
+
+// ✅ Correct: Use WithMultiplayer wrapper
+const useTodoStore = create<WithMultiplayer<TodoState>>()(
+  multiplayer(
+    (set) => ({
+      todos: {},
+      filter: 'all',
+      addTodo: (text) => set((state) => ({
+        todos: {
+          ...state.todos,
+          [Date.now().toString()]: { id: Date.now().toString(), text, completed: false }
+        }
+      })),
+      toggleTodo: (id) => set((state) => ({
+        todos: {
+          ...state.todos,
+          [id]: { ...state.todos[id], completed: !state.todos[id].completed }
+        }
+      })),
+      setFilter: (filter) => set({ filter }),
+    }),
+    {
+      namespace: 'todos-app',
+      apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
+      tokenGenerationUrl: '/api/generate-token',
+    }
+  )
+);
+```
+
+### Type-Safe Configuration Options
+
+The `MultiplayerOptions` interface provides full type safety for configuration:
+
+```typescript
+import { MultiplayerOptions, LogLevel } from '@hpkv/zustand-multiplayer';
+
+// Type-safe configuration
+const options: MultiplayerOptions<TodoState> = {
+  namespace: 'my-app',
+  apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
+  tokenGenerationUrl: '/api/generate-token',
+  
+  // Type-safe field selection for sync
+  sync: ['todos', 'filter'], // TypeScript ensures these keys exist in TodoState
+  
+  // Granularity control
+  zFactor: 2, // 0-10 range enforced
+  
+  // Logging configuration
+  logLevel: LogLevel.INFO, // Enum ensures valid values
+  
+  // Rate limiting
+  rateLimit: 10, // Number of updates per second
+};
+
+const useStore = create<WithMultiplayer<TodoState>>()(
+  multiplayer(stateCreator, options)
+);
+```
+
+### Accessing Multiplayer State and Methods
+
+The `WithMultiplayer` wrapper adds a `multiplayer` property to your state with full type safety:
+
+```typescript
+function TodoApp() {
+  const { todos, addTodo, multiplayer } = useTodoStore();
+  
+  // Fully typed multiplayer state
+  const connectionState: ConnectionState = multiplayer.connectionState;
+  const hasHydrated: boolean = multiplayer.hasHydrated;
+  const metrics: PerformanceMetrics = multiplayer.performanceMetrics;
+  
+  // Type-safe multiplayer methods (accessed via store reference)
+  const store = useTodoStore;
+  const handleForceSync = async () => {
+    await store.multiplayer.reHydrate(); // Returns Promise<void>
+  };
+  
+  const handleClearData = async () => {
+    await store.multiplayer.clearStorage(); // Returns Promise<void>
+  };
+  
+  // Connection monitoring
+  const connectionStatus = store.multiplayer.getConnectionStatus(); // ConnectionStats | null
+  const performanceData = store.multiplayer.getMetrics(); // PerformanceMetrics
+  
+  return (
+    <div>
+      <h1>Todos ({Object.keys(todos).length})</h1>
+      <p>Status: {connectionState}</p>
+      <p>Synced: {hasHydrated ? '✅' : '⏳'}</p>
+      <p>Avg Sync Time: {metrics.averageSyncTime.toFixed(1)}ms</p>
+      <button onClick={handleForceSync}>Force Sync</button>
+    </div>
+  );
+}
+```
+
+### Complex State Types
+
+For advanced use cases with nested objects and complex types:
+
+```typescript
+interface User {
+  id: string;
+  name: string;
+  avatar?: string;
+  lastSeen: Date;
+}
+
+interface Message {
+  id: string;
+  authorId: string;
+  content: string;
+  timestamp: Date;
+  reactions: Record<string, string[]>; // emoji -> user IDs
+}
+
+interface ChatState {
+  users: Record<string, User>;
+  messages: Record<string, Message>;
+  typing: Record<string, boolean>; // userId -> isTyping
+  
+  // Actions with proper typing
+  addUser: (user: User) => void;
+  removeUser: (userId: string) => void;
+  sendMessage: (content: string, authorId: string) => void;
+  setTyping: (userId: string, isTyping: boolean) => void;
+  addReaction: (messageId: string, emoji: string, userId: string) => void;
+}
+
+const useChatStore = create<WithMultiplayer<ChatState>>()(
+  multiplayer(
+    (set, get) => ({
+      users: {},
+      messages: {},
+      typing: {},
+      
+      addUser: (user) => set((state) => ({
+        users: { ...state.users, [user.id]: user }
+      })),
+      
+      removeUser: (userId) => set((state) => {
+        const { [userId]: removed, ...users } = state.users;
+        const { [userId]: removedTyping, ...typing } = state.typing;
+        return { users, typing };
+      }),
+      
+      sendMessage: (content, authorId) => set((state) => {
+        const message: Message = {
+          id: Date.now().toString(),
+          authorId,
+          content,
+          timestamp: new Date(),
+          reactions: {},
+        };
+        return {
+          messages: { ...state.messages, [message.id]: message },
+          typing: { ...state.typing, [authorId]: false }, // Clear typing
+        };
+      }),
+      
+      setTyping: (userId, isTyping) => set((state) => ({
+        typing: { ...state.typing, [userId]: isTyping }
+      })),
+      
+      addReaction: (messageId, emoji, userId) => set((state) => {
+        const message = state.messages[messageId];
+        if (!message) return state;
+        
+        const reactions = { ...message.reactions };
+        if (!reactions[emoji]) reactions[emoji] = [];
+        
+        // Toggle reaction
+        const userIndex = reactions[emoji].indexOf(userId);
+        if (userIndex === -1) {
+          reactions[emoji] = [...reactions[emoji], userId];
+        } else {
+          reactions[emoji] = reactions[emoji].filter(id => id !== userId);
+          if (reactions[emoji].length === 0) {
+            delete reactions[emoji];
+          }
+        }
+        
+        return {
+          messages: {
+            ...state.messages,
+            [messageId]: { ...message, reactions }
+          }
+        };
+      }),
+    }),
+    {
+      namespace: 'chat-room',
+      apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
+      tokenGenerationUrl: '/api/generate-token',
+      // Only sync persistent data, not ephemeral typing indicators
+      sync: ['users', 'messages'], 
+      zFactor: 2, // Granular storage for individual messages and users
+    }
+  )
+);
+```
+
+### Error Handling with Types
+
+Handle errors with proper TypeScript types:
+
+```typescript
+import { ConnectionState } from '@hpkv/websocket-client';
+
+function ConnectionManager() {
+  const { multiplayer } = useTodoStore();
+  const [error, setError] = useState<string | null>(null);
+  
+  const handleReconnect = async () => {
+    setError(null);
+    try {
+      await useTodoStore.multiplayer.connect();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Connection failed');
+    }
+  };
+  
+  const handleClearData = async () => {
+    if (!confirm('This will clear all data. Continue?')) return;
+    
+    try {
+      await useTodoStore.multiplayer.clearStorage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Clear failed');
+    }
+  };
+  
+  return (
+    <div>
+      <div>
+        Status: <span className={getStatusColor(multiplayer.connectionState)}>
+          {multiplayer.connectionState}
+        </span>
+      </div>
+      
+      {error && <div className="error">{error}</div>}
+      
+      {multiplayer.connectionState === ConnectionState.DISCONNECTED && (
+        <button onClick={handleReconnect}>Reconnect</button>
+      )}
+      
+      <button onClick={handleClearData}>Clear All Data</button>
+    </div>
+  );
+}
+
+function getStatusColor(state: ConnectionState): string {
+  switch (state) {
+    case ConnectionState.CONNECTED: return 'green';
+    case ConnectionState.CONNECTING: return 'orange';
+    case ConnectionState.RECONNECTING: return 'orange';
+    case ConnectionState.DISCONNECTED: return 'red';
+    default: return 'gray';
+  }
+}
+```
+
+### Token Generation with Types
+
+Type-safe token generation for your backend:
+
+```typescript
+// types/token.ts
+import { TokenRequest, TokenResponse } from '@hpkv/zustand-multiplayer/auth/token-helper';
+
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  permissions: string[];
+}
+
+export interface TokenGenerationRequest extends TokenRequest {
+  // Add any additional fields your app needs
+  userId?: string;
+  permissions?: string[];
+}
+
+// pages/api/generate-token.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
+import { AuthenticatedUser, TokenGenerationRequest } from '../types/token';
 
 const tokenHelper = new TokenHelper(
   process.env.HPKV_API_KEY!,
   process.env.HPKV_API_BASE_URL!
 );
 
-app.post('/api/generate-token', async (req, res) => {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<TokenResponse | { error: string }>
+) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  
   try {
-    // Authentication middleware
-    const user = await authenticateUser(req.headers.authorization);
+    // Type-safe authentication
+    const user: AuthenticatedUser | null = await authenticateUser(
+      req.headers.authorization
+    );
+    
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-
-    // Check namespace permissions
-    const { namespace } = req.body;
-    if (!user.canAccess(namespace)) {
-      return res.status(403).json({ error: 'Access denied' });
+    
+    // Type-safe request validation
+    const tokenRequest: TokenGenerationRequest = req.body;
+    
+    if (!tokenRequest.namespace || typeof tokenRequest.namespace !== 'string') {
+      return res.status(400).json({ error: 'Invalid namespace' });
     }
-
-    // Use built-in Express handler
-    const handler = tokenHelper.createExpressHandler();
-    return handler(req, res);
+    
+    // Check permissions
+    if (!user.permissions.includes(`namespace:${tokenRequest.namespace}`)) {
+      return res.status(403).json({ error: 'Access denied to namespace' });
+    }
+    
+    // Generate token with full type safety
+    const response: TokenResponse = await tokenHelper.processTokenRequest(tokenRequest);
+    
+    res.status(200).json(response);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Token generation error:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Internal server error' 
+    });
   }
-});
+}
 
-app.listen(3000);
+async function authenticateUser(
+  authorization?: string
+): Promise<AuthenticatedUser | null> {
+  // Your authentication logic here
+  // Return null if not authenticated, user object if authenticated
+  return null;
+}
 ```
 
-> 📖 **See [Token API Guide](./docs/TOKEN_API.md)** for more details on the details and implementations in Express, Next.js, Fastify, and other frameworks.
+### Generic Store Factory
 
-### 3. Use in Your React App
+Create reusable typed store factories:
 
-```tsx
-// components/TodoApp.tsx
-import React, { useState } from 'react';
-import { ConnectionState } from '@hpkv/websocket-client';
-import { useTodoStore } from './store';
+```typescript
+// utils/store-factory.ts
+import { create } from 'zustand';
+import { multiplayer, WithMultiplayer, MultiplayerOptions } from '@hpkv/zustand-multiplayer';
 
-function TodoApp() {
-  const [newTodo, setNewTodo] = useState('');
-  const { todos, addTodo, toggleTodo, removeTodo, multiplayer } = useTodoStore();
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newTodo.trim()) {
-      addTodo(newTodo.trim());
-      setNewTodo('');
-    }
-  };
-
-  const todoList = Object.values(todos).sort((a, b) => b.createdAt - a.createdAt);
-
-  return (
-    <div className="todo-app">
-      <div className="connection-status">
-        Status: {multiplayer.connectionState === ConnectionState.CONNECTED ? '🟢 Connected' : '🔴 Disconnected'}
-      </div>
-      
-      <h1>Collaborative Todo List</h1>
-      
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={newTodo}
-          onChange={(e) => setNewTodo(e.target.value)}
-          placeholder="Add a new todo..."
-        />
-        <button type="submit">Add</button>
-      </form>
-
-      <ul className="todo-list">
-        {todoList.map((todo) => (
-          <li key={todo.id} className={todo.completed ? 'completed' : ''}>
-            <label>
-              <input
-                type="checkbox"
-                checked={todo.completed}
-                onChange={() => toggleTodo(todo.id)}
-              />
-              <span>{todo.text}</span>
-            </label>
-            <button onClick={() => removeTodo(todo.id)}>Delete</button>
-          </li>
-        ))}
-      </ul>
-      
-      <p>✨ Changes sync in real-time across all connected users!</p>
-    </div>
+export function createMultiplayerStore<T extends Record<string, any>>(
+  stateCreator: (set: any, get: any) => T,
+  options: MultiplayerOptions<T>
+) {
+  return create<WithMultiplayer<T>>()(
+    multiplayer(stateCreator, options)
   );
 }
 
-export default TodoApp;
-```
-
-### 4. Environment Configuration
-
-```bash
-# .env.local (Next.js) or .env (Node.js)
-HPKV_API_KEY=your_api_key_here
-HPKV_API_BASE_URL=https://api.hpkv.io
-
-# For client-side (Next.js public variables)
-NEXT_PUBLIC_HPKV_API_BASE_URL=https://api.hpkv.io
-```
-
-**🎉 That's it!** Your collaborative todo app is now ready with real-time synchronization!
-
-## Implementation Patterns
-
-### Pattern 1: Simple Live Poll
-
-Perfect for voting systems, surveys, or real-time counters:
-
-```typescript
-interface PollState {
-  votes: Record<string, number>;
-  vote: (option: string) => void;
+// Usage
+interface CounterState {
+  count: number;
+  increment: () => void;
+  decrement: () => void;
 }
 
-const usePollStore = create<WithMultiplayer<PollState>>()(
-  multiplayer(
-    (set) => ({
-      votes: {},
-      vote: (option: string) => set((state) => {
-        state.votes[option] = (state.votes[option] || 0) + 1;
-      }),
-    }),
-    {
-      namespace: 'live-poll',
-      apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
-      tokenGenerationUrl: '/api/generate-token',
-    }
-  )
+const useCounterStore = createMultiplayerStore<CounterState>(
+  (set) => ({
+    count: 0,
+    increment: () => set((state) => ({ count: state.count + 1 })),
+    decrement: () => set((state) => ({ count: state.count - 1 })),
+  }),
+  {
+    namespace: 'counter',
+    apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
+    tokenGenerationUrl: '/api/generate-token',
+  }
 );
 ```
 
-### Pattern 2: Selective Sync (Mixed Local/Shared State)
+### Type-Safe Middleware Composition
 
-Keep some data local while sharing others:
+Combine with other Zustand middlewares while maintaining type safety:
 
 ```typescript
+import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
+import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
+
 interface AppState {
-  // Shared across all users
-  globalSettings: { theme: string; language: string };
-  sharedCounter: number;
-  
-  // Local to each user
-  userPreferences: { notifications: boolean; sidebar: boolean };
-  draftInput: string;
-  
-  // Actions
-  updateGlobalSettings: (settings: Partial<AppState['globalSettings']>) => void;
-  incrementCounter: () => void;
-  setUserPreference: (key: string, value: boolean) => void;
+  user: User | null;
+  settings: UserSettings;
+  setUser: (user: User) => void;
+  updateSettings: (settings: Partial<UserSettings>) => void;
 }
 
 const useAppStore = create<WithMultiplayer<AppState>>()(
   multiplayer(
-    (set) => ({
-      globalSettings: { theme: 'light', language: 'en' },
-      sharedCounter: 0,
-      userPreferences: { notifications: true, sidebar: true },
-      draftInput: '',
+    subscribeWithSelector<AppState>((set) => ({
+      user: null,
+      settings: { theme: 'light', notifications: true },
       
-      updateGlobalSettings: (settings) => set((state) => {
-        Object.assign(state.globalSettings, settings);
-      }),
+      setUser: (user) => set({ user }),
       
-      incrementCounter: () => set((state) => {
-        state.sharedCounter += 1;
-      }),
-      
-      setUserPreference: (key, value) => set((state) => {
-        state.userPreferences[key] = value;
-      }),
-    }),
+      updateSettings: (newSettings) => set((state) => ({
+        settings: { ...state.settings, ...newSettings }
+      })),
+    })),
     {
-      namespace: 'mixed-sync-app',
-      // Only sync shared data
-      publishUpdatesFor: () => ['globalSettings', 'sharedCounter'],
-      subscribeToUpdatesFor: () => ['globalSettings', 'sharedCounter'],
+      namespace: 'app-state',
       apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
       tokenGenerationUrl: '/api/generate-token',
-    }
-  )
-);
-```
-
-### Pattern 3: Server-Side Store
-
-For background workers, cron jobs, or server-side logic:
-
-```javascript
-// server-store.js
-import { createStore } from 'zustand/vanilla';
-import { multiplayer } from '@hpkv/zustand-multiplayer';
-
-const serverStore = createStore(
-  multiplayer(
-    (set) => ({
-      systemMetrics: {},
-      notifications: {},
-      
-      updateMetrics: (metrics) => set((state) => {
-        Object.assign(state.systemMetrics, metrics);
-      }),
-      
-      broadcastNotification: (message) => set((state) => {
-        const id = Date.now().toString();
-        state.notifications[id] = {
-          id,
-          message,
-          timestamp: Date.now(),
-          read: false,
-        };
-      }),
-    }),
-    {
-      namespace: 'system-alerts',
-      apiBaseUrl: process.env.HPKV_API_BASE_URL,
-      apiKey: process.env.HPKV_API_KEY, // Direct API key for server
+      sync: ['user', 'settings'], // Type-safe field selection
     }
   )
 );
 
-// Use in background job
-setInterval(() => {
-  const metrics = collectSystemMetrics();
-  serverStore.getState().updateMetrics(metrics);
-}, 30000);
-```
-
-## Multiplayer State
-
-Every store created with the multiplayer middleware provides a `multiplayer` object with state and methods for managing the connection and synchronization:
-
-```javascript
-// You can access the multiplayer state to use multiplayer API and states
-const multiplayer = usePollStore((state) => state.multiplayer);
-
-// Connection state (reactive)
-console.log(multiplayer.connectionState); // 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'RECONNECTING'
-
-// Manual control methods
-multiplayer.hydrate();        // Refresh from server
-multiplayer.clearStorage();   // Clear local data
-multiplayer.connect();        // Establish connection
-multiplayer.disconnect();     // Close connection
-multiplayer.destroy();        // Cleanup resources
-
-// Status and metrics
-const status = multiplayer.getConnectionStatus();
-const metrics = multiplayer.getMetrics();
-```
-
-**Available State:**
-- `connectionState` - Reactive connection state (`CONNECTED`, `DISCONNECTED`, `CONNECTING`, `RECONNECTING`)
-- `hasHydrated` - Whether the store has loaded initial state from server
-
-**Available Methods:**
-- `hydrate()` - Manually sync with server state
-- `clearStorage()` - Clear all local stored data
-- `connect()` - Establish connection
-- `disconnect()` - Close connection
-- `getConnectionStatus()` - Get detailed connection statistics
-- `getMetrics()` - Get performance statistics (sync times, operation counts)
-- `destroy()` - Destroy the store and cleanup resources
-
-
-## Advanced Features
-
-### 🎯 Selective Synchronization
-
-By default, every change to your state is synced with all connected clients. However, you have control over which parts of your state are shared and which remain local. The *multiplayer* middleware lets you specify exactly which state fields should be broadcast to others and which updates your store should listen for from other clients.
-
-This can be managed using `publishUpdatesFor` and `subscribeToUpdatesFor` options.
-
-**Why use selective sync?**
-- Keep sensitive data local (user preferences, drafts)
-- Share only collaborative data (shared settings, public content)
-- Reduce network traffic by syncing only what's needed
-- Avoiding unnecessary sync to improve performance
-
-```javascript
-export const useAppStore = create(
-  multiplayer(
-    (set) => ({
-      // Shared across all users
-      sharedSettings: { teamSettings: {}, defaultLanguage: 'en' },
-      // Local to each user
-      userPreferences: { theme: '' },
-      // Actions...
-    }),
-    {
-      namespace: 'my-app',
-      // Only sync changes to shared settings with remote
-      publishUpdatesFor: () => ['sharedSettings'],
-      // Only receive updates for shared settings from other clients
-      subscribeToUpdatesFor: () => ['sharedSettings'],
-    })
-);
-```
-
-**Result:**
-- ✅ `sharedSettings` - synchronized across all users - will be persisted/synced
-- ✅ `userPreferences` - local to each user - Won't be persisted/synced
-
-### 🔧 Granular Storage - Reduce Conflicts in Collaborative Apps
-
-Multiplayer uses a granular storage scheme that defines how nested state is stored and synchronized. Instead of treating entire objects as single units, it breaks down nested structures into individual storage keys, avoiding unnecessary conflicts for collaborative editing.
-
-The `zFactor` option controls the depth level for granular storage, allowing you to optimize performance based on your data structure:
-
-- **zFactor: 0**: Store entire state in a single key - Best for atomic state updates
-- **zFactor: 1**: Each top-level property gets its own key (default) - Good balance
-- **zFactor: 2**: Properties at depth 2 get their own keys - For nested objects
-- **zFactor: 3-10**: Deeper granularity - For deeply nested collaborative data
-
-**Choosing the Right zFactor:**
-- **Use zFactor: 0** when the entire state should update atomically (e.g., form submissions, atomic transactions)
-- **Use zFactor: 1** (default) for most applications - provides good balance between granularity and performance
-- **Use higher zFactor (2+)** when properties change independently (e.g., individual todo items in a nested structure that different users might edit)
-- Consider your collaboration patterns: If multiple users edit different parts of deeply nested objects simultaneously, use a higher zFactor to minimize conflicts
-
-`multiplayer` allows [immer style](https://immerjs.github.io/immer/) state updates to conveniently changing only part of the state which is intended to be changed.
-
-```javascript
- multiplayer(
-    (set) => ({
-      todos: {},
-      addTodo: (id, text) => set((state) => {
-        state.todos[id] = {id, text, completed:false}
-      }),
-      toggleTodo:(id) => set((state) => {
-        state.todos[id].completed = !state.todos[id].completed
-      }),
-    }),
-    {
-      //options...
-    })
-```
-
-#### Storage Example
-
-For this example state:
-```javascript
-{
-  "user": {
-    "profile": {
-      "name": "John",
-      "email": "john@example.com"
-    },
-    "preferences": {
-      "theme": "dark"
-    }
-  },
-  "todos": {
-    "1": {
-      "id": "1",
-      "text": "Buy milk",
-      "completed": false
-    },
-    "2": {
-      "id": "2", 
-      "text": "Walk dog",
-      "completed": true
+// Type-safe subscriptions
+useAppStore.subscribe(
+  (state) => state.user, // TypeScript knows this is User | null
+  (user) => {
+    if (user) {
+      console.log('User logged in:', user.name);
     }
   }
-}
+);
 ```
 
+### Common TypeScript Patterns
 
-**With `zFactor: 0`** (top-level properties):
-```
-namespace:user -> { "profile": {...}, "preferences": {...} }
-namespace:todos -> { "1": {...}, "2": {...} }
-```
-
-**With `zFactor: 1`** (properties at depth 2):
-```
-namespace:user:profile -> { "name": "John", "email": "john@example.com" }
-namespace:user:preferences -> { "theme": "dark" }
-namespace:todos:1 -> { "id": "1", "text": "Buy milk", "completed": false }
-namespace:todos:2 -> { "id": "2", "text": "Walk dog", "completed": true }
-```
-
-**With `zFactor: 2`** (default - properties at depth 3):
-```
-namespace:user:profile:name -> "John"
-namespace:user:profile:email -> "john@example.com"  
-namespace:user:preferences:theme -> "dark"
-namespace:todos:1:id -> "1"
-namespace:todos:1:text -> "Buy milk"
-namespace:todos:1:completed -> false
-namespace:todos:2:id -> "2"
-namespace:todos:2:text -> "Walk dog"
-namespace:todos:2:completed -> true
-```
-
-Each nested property gets its own storage key, allowing the middleware to:
-- **Track changes at depth** - Sync only the specific nested properties that changed
-- **Reduce conflicts** - Multiple users can edit different nested properties simultaneously
-- **Optimize performance** - Choose the right granularity level for your data structure
-
-
-> **📝 Records vs Arrays for Collections:**
-> multiplayer treats records as objects so each record entry will be stored in a separate key-value entry in the database, however arrays are treated as primitive types and array members will not be stored in separate key-value entries.
->Therefore when dealing with collection of objects that are going to be updated concurrently by multiple users, best is to use records instead of arrays.
-
-
-### 📊 Monitoring and Debugging
-
-The middleware provides comprehensive monitoring and debugging capabilities:
+**1. Conditional State Based on Connection:**
 
 ```typescript
-// Real-time connection monitoring component
-function ConnectionMonitor() {
-  const { multiplayer } = useMyStore();
-  const [status, setStatus] = useState(multiplayer.getConnectionStatus());
-  const [metrics, setMetrics] = useState(multiplayer.getMetrics());
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStatus(multiplayer.getConnectionStatus());
-      setMetrics(multiplayer.getMetrics());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [multiplayer]);
-
-  return (
-    <div className="connection-monitor">
-      <h3>Connection Status</h3>
-      <div>
-        <span className={status?.isConnected ? 'connected' : 'disconnected'}>
-          {status?.isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-        </span>
-        <span>State: {multiplayer.connectionState}</span>
-      </div>
-      
-      <div>Reconnect attempts: {status?.reconnectAttempts}</div>
-      <div>Pending messages: {status?.messagesPending}</div>
-      
-      {status?.throttling && (
-        <div>
-          Throttling: {status.throttling.currentRate}/s 
-          (Queue: {status.throttling.queueLength})
-        </div>
-      )}
-
-      <h3>Performance Metrics</h3>
-      <div>State changes: {metrics.stateChangesProcessed}</div>
-      <div>Avg sync time: {metrics.averageSyncTime.toFixed(1)}ms</div>
-      <div>Avg hydration: {metrics.averageHydrationTime.toFixed(1)}ms</div>
-      
-      <button onClick={() => multiplayer.hydrate()}>
-        Force Refresh
-      </button>
-    </div>
-  );
-}
-```
-
-### 🛡️ Error Handling
-
-Handle errors gracefully with proper error catching:
-
-```typescript
-import { 
-  MultiplayerError, 
-  TokenGenerationError, 
-  HydrationError,
-  ConfigurationError 
-} from '@hpkv/zustand-multiplayer';
-
-function ErrorBoundaryComponent() {
-  const { multiplayer } = useMyStore();
-  const [error, setError] = useState<string | null>(null);
-
-  const handleHydrate = async () => {
-    try {
-      setError(null);
-      await multiplayer.hydrate();
-    } catch (err) {
-      if (err instanceof HydrationError) {
-        setError(`Sync failed: ${err.message}`);
-        console.error('Hydration error details:', err.toSerializable());
-      } else if (err instanceof TokenGenerationError) {
-        setError('Authentication failed. Please refresh.');
-      } else {
-        setError('An unexpected error occurred.');
-      }
-    }
-  };
-
-  const handleClearStorage = async () => {
-    if (confirm('This will clear all data. Continue?')) {
-      try {
-        await multiplayer.clearStorage();
-        setError(null);
-      } catch (err) {
-        setError('Failed to clear storage.');
-      }
-    }
-  };
-
-  return (
-    <div className="error-boundary">
-      {error && (
-        <div className="error-message">
-          <span>⚠️ {error}</span>
-          <button onClick={() => setError(null)}>Dismiss</button>
-        </div>
-      )}
-      
-      <div className="admin-controls">
-        <button onClick={handleHydrate}>Refresh Data</button>
-        <button onClick={handleClearStorage}>Clear All Data</button>
-        <button onClick={() => multiplayer.disconnect()}>Disconnect</button>
-        <button onClick={() => multiplayer.connect()}>Reconnect</button>
-      </div>
-    </div>
-  );
-}
-```
-
-### 🎮 Manual Control
-
-Multiplayer will automatically connect and hydrate the state from database, However you can also take control when needed:
-
-```javascript
-// components/AdminControls.js
-function AdminControls() {
-  const { multiplayer } = useMyStore();
-
-  return (
-    <div>
-      <button onClick={() => multiplayer.hydrate()}>
-        Refresh from Server
-      </button>
-      <button onClick={() => multiplayer.clearStorage()}>
-        Clear All Data
-      </button>
-      <button onClick={() => multiplayer.disconnect()}>
-        Disconnect
-      </button>
-      <button onClick={() => multiplayer.connect()}>
-        Reconnect
-      </button>
-    </div>
-  );
-}
-```
-### Connection Monitoring
-
-Track connection health using reactive state:
-
-```javascript
-import { useMyStore } from './store';
-import { ConnectionState } from '@hpkv/websocket-client';
-function ConnectionMonitor() {
-  const  {connectionState}  = useMyStore((state) => state.multiplayer);
-  return (
-    <div>
-      <p>Connected: {connectionState === ConnectionState.CONNECTED ? 'Yes' : 'No'}</p>
-    </div>
-  );
-}
-```
-
-## TypeScript Support
-
-Always use `WithMultiplayer<T>` wrapper for proper typing:
-
-```typescript
-import { create } from 'zustand';
-import { multiplayer, WithMultiplayer } from '@hpkv/zustand-multiplayer';
-
-
-interface TodoState {
-    todos: Record<string, {id: string, text: string, completed: boolean}>;
-    addTodo: (text: string) => void;
-    toggleTodo: (id: string) => void;
+function TodoList() {
+  const { todos, multiplayer } = useTodoStore();
+  
+  // Type-safe conditional rendering
+  if (multiplayer.connectionState === ConnectionState.DISCONNECTED) {
+    return <div>Offline - some features may not work</div>;
   }
   
-  export const useTodoStore = create<WithMultiplayer<TodoState>>()(
-    multiplayer((set) => ({
-        todos: {},
-        addTodo: (text: string) => set((state: TodoState) => {
-            const id = Date.now().toString();
-            state.todos[id] = {id, text, completed: false};
-        }),
-        toggleTodo: (id: string) => set((state: TodoState) => {
-            state.todos[id].completed = !state.todos[id].completed;
-        }),
-    }),
-    {
-        namespace: 'todos',
-        apiBaseUrl: 'YOUR_HPKV_BASE_URL',
-        tokenGenerationUrl: 'http://localhost:3000/api/generate-token',
-    })
+  if (!multiplayer.hasHydrated) {
+    return <div>Loading...</div>;
+  }
+  
+  return (
+    <div>
+      {Object.values(todos).map(todo => (
+        <TodoItem key={todo.id} todo={todo} />
+      ))}
+    </div>
   );
+}
 ```
 
-## Using without React
+**2. Type Guards for Store Methods:**
 
-For non-react usage, instead of Zustand's `create`, use `createStore` from vanilla Zustand
+```typescript
+function isMultiplayerStore<T>(
+  store: any
+): store is { multiplayer: { connect: () => Promise<void> } } {
+  return store && typeof store.multiplayer?.connect === 'function';
+}
 
-### Using Vanilla JavaScript
+// Usage
+if (isMultiplayerStore(someStore)) {
+  await someStore.multiplayer.connect(); // TypeScript knows this is safe
+}
+```
+
+This TypeScript guide ensures you get the full benefits of type safety while building multiplayer applications with Zustand Multiplayer.
+
+## Using Without React
+
+Zustand Multiplayer works anywhere Zustand works - not just React!
+
+### Vanilla JavaScript
 
 ```javascript
 import { createStore } from 'zustand/vanilla';
 import { multiplayer } from '@hpkv/zustand-multiplayer';
 
-// Create store without React hooks
-const gameStore = createStore(
+const store = createStore(
   multiplayer(
     (set) => ({
-      players: {},
-      gameState: 'waiting',
-      addPlayer: (id, name) => set((state) => {
-        state.players[id] = { name, score: 0 };
-      }),
-      updateScore: (playerId, score) => set((state) => {
-        state.players[playerId].score = score;
-      }),
-      startGame: () => set((state) => {
-        state.gameState = 'playing';
-      }),
+      count: 0,
+      increment: () => set((state) => ({ count: state.count + 1 })),
     }),
     {
-      namespace: 'multiplayer-game',
-      apiBaseUrl: 'Your_HPKV_API_Base_URL',
-      apiKey: 'Your_HPKV_API-Key', // Server-side only
+      namespace: 'vanilla-counter',
+      apiKey: 'your-api-key',  // Server-side only!
     }
   )
 );
 
-gameStore.getState().addPlayer('player1', 'Alice');
-gameStore.getState().addPlayer('player2', 'Bob');
-gameStore.getState().startGame();
+// Use the store
+store.getState().increment();
+console.log(store.getState().count);
 
 // Subscribe to changes
-gameStore.subscribe((state) => {
-  console.log('Game state updated:', state);
-  updateGameUI(state);
+store.subscribe((state) => {
+  document.getElementById('count').textContent = state.count;
 });
 ```
 
-### Using in Server-Side NodeJS
-
-Server-side stores can use your API key directly for authentication (no token generation endpoint needed). When client and server stores share the same namespace, they automatically synchronize state in real-time:
+### Node.js Server
 
 ```javascript
-// server-store.js
 import { createStore } from 'zustand/vanilla';
 import { multiplayer } from '@hpkv/zustand-multiplayer';
 
-const serverStore = createStore(
+// Create a server-side store
+const metricsStore = createStore(
   multiplayer(
     (set) => ({
-      notifications: {},
-      addNotification: (message) => set((state) => {
-        state.notifications[message.id] = message;
+      metrics: {},
+      updateMetric: (key, value) => set((state) => {
+        state.metrics[key] = value;
       }),
     }),
     {
-      namespace: 'live-notiictions',
-      apiBaseUrl: 'Your_HPKV_API_Base_URL',
-      apiKey: 'Your_HPKV_API-Key',
-    })
+      namespace: 'server-metrics',
+      apiKey: process.env.HPKV_API_KEY,
+    }
+  )
 );
+
+// Update metrics from your server
+setInterval(() => {
+  metricsStore.getState().updateMetric('cpu', process.cpuUsage());
+  metricsStore.getState().updateMetric('memory', process.memoryUsage());
+}, 5000);
 ```
 
-```javascript
-// client-store.js
-export const useAppStore = create()(
-  multiplayer(
-    (set) => ({
-      notifications: {},
-    }),
-    {
-      namespace: 'live-notifications', // Same namespace = shared state
-      apiBaseUrl: 'Your_HPKV_API_Base_URL',
-      tokenGenerationUrl: '/api/generate-token',
-    })
-);
-```
+## 🔐 Security Best Practices
 
-## Core Concepts
+### Token Generation Endpoint
 
-### Namespaces
-
-Each store has a unique `namespace` that:
-- **Identifies** your data in HPKV (keys are prefixed with `namespace:`)
-- **Enables collaboration** - stores with the same namespace share data
-- **Provides isolation** - different namespaces don't interfere with each other
-
-### Authentication
-
-- **Client-side**: Use `tokenGenerationUrl` pointing to your secure backend endpoint
-- **Server-side**: Use `apiKey` directly (never expose in client code)
-
-### State Persistence
-
-All published state changes are automatically:
-- **Persisted** to HPKV for durability
-- **Synchronized** across all connected clients in real-time
-
-## Configuration
-
-### Basic Options
+Always implement proper authentication and authorization:
 
 ```typescript
-{
-  namespace: 'my-app',                    // Required: unique identifier
-  apiBaseUrl: 'hpkv-api-base-url',     // Required: your HPKV base URL
-  tokenGenerationUrl: '/api/token',       // Required for client-side
-  apiKey: 'your-api-key',                // Required for server-side
-}
-```
-
-### Advanced Options
-
-```typescript
-{
-  // Selective sync
-  publishUpdatesFor: () => ['field1', 'field2'],
-  subscribeToUpdatesFor: () => ['field1', 'field3'],
-  
-  // Storage granularity
-  zFactor: 4, // Controls depth level for granular storage (0-10, default: 2)
-  
-  // Lifecycle hooks
-  onHydrate: (state) => console.log('Hydrated:', state),
-  onConflict: (conflicts) => ({ strategy: 'keep-remote' }),
-  
-  // Performance & debugging
-  logLevel: LogLevel.INFO,
-  profiling: true,
-  retryConfig: {
-    maxRetries: 5,
-    baseDelay: 1000,
-    maxDelay: 30000,
-    backoffFactor: 2,
-  },
-  
-  // Websocket connection tuning
-  clientConfig: {
-    maxReconnectAttempts: 10,
-    throttling: { enabled: true, rateLimit: 10 }
+// api/generate-token.ts
+export default async function handler(req, res) {
+  // 1. Authenticate the user
+  const user = await authenticateUser(req.headers.authorization);
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### 🔗 Connection Problems
-
-**Problem**: Store not connecting or frequent disconnections
-```typescript
-// Check connection status
-const { multiplayer } = useMyStore();
-console.log('Connection state:', multiplayer.connectionState);
-console.log('Status:', multiplayer.getConnectionStatus());
-```
-
-**Solutions**:
-- Verify your `apiBaseUrl` and token endpoint are correct
-- Check network connectivity and firewall settings
-- Ensure your token generation endpoint is accessible
-- Review server logs for authentication errors
-
-#### 🔑 Authentication Errors
-
-**Problem**: `TokenGenerationError` or 401/403 responses
-```typescript
-// Debug token generation
-try {
-  const response = await fetch('/api/generate-token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      namespace: 'your-namespace',
-      subscribedKeys: ['field1', 'field2']
-    })
+  
+  // 2. Check permissions for the requested namespace
+  const { namespace } = req.body;
+  if (!user.canAccessNamespace(namespace)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  
+  // 3. Rate limiting
+  if (await isRateLimited(user.id)) {
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  
+  // 4. Generate token
+  const token = await tokenHelper.processTokenRequest({
+    ...req.body
   });
-  console.log('Token response:', await response.json());
-} catch (error) {
-  console.error('Token generation failed:', error);
+  
+  // 5. Log for audit
+  await logTokenGeneration(user.id, namespace);
+  
+  return res.status(200).json(token);
 }
 ```
 
-**Solutions**:
-- Verify your HPKV API key is correct and not expired
-- Check that your token endpoint implements proper authentication
-- Ensure environment variables are loaded correctly
-- Validate the token request/response format
+### Important Security Notes
 
-#### ⚡ Performance Issues
+- **Never expose API keys** in client-side code
+- **Tokens expire** after 2 hours by default
+- **Anyone with a token** can read/write to that namespace
+- **Implement authorization** in your token endpoint
+- **Consider rate limiting** to prevent abuse
 
-**Problem**: Slow synchronization or high memory usage
-```typescript
-// Enable profiling and monitor metrics
-const useMyStore = create<WithMultiplayer<MyState>>()(
-  multiplayer(
-    // ... your state
-    {
-      namespace: 'my-app',
-      profiling: true, // Enable detailed metrics
-      logLevel: LogLevel.DEBUG, // Enable debug logging
-      zFactor: 1, // Reduce granularity if needed
-    }
-  )
-);
+## API Reference
 
-// Monitor performance
-const metrics = multiplayer.getMetrics();
-console.log('Performance:', metrics);
-```
-
-**Solutions**:
-- Adjust `zFactor` based on your data structure
-- Use selective sync to reduce network traffic
-- Implement proper error boundaries
-- Monitor and optimize your state structure
-
-#### 🔄 State Sync Issues
-
-**Problem**: Changes not syncing or appearing incorrect
-```typescript
-// Debug state changes
-const useMyStore = create<WithMultiplayer<MyState>>()(
-  multiplayer(
-    // ... your state
-    {
-      namespace: 'debug-app',
-      logLevel: LogLevel.DEBUG,
-      onHydrate: (state) => {
-        console.log('Hydrated state:', state);
-      },
-      onConflict: (conflicts) => {
-        console.log('Conflicts detected:', conflicts);
-        return { strategy: 'keep-remote' };
-      }
-    }
-  )
-);
-```
-
-**Solutions**:
-- Ensure you're using Immer-style mutations correctly
-- Check that your namespace is unique and consistent
-- Verify published/subscribed fields configuration
-- Review conflict resolution strategy
-
-### Debug Configuration
-
-For development and debugging, use these enhanced settings:
+### Multiplayer Options
 
 ```typescript
-const useDebugStore = create<WithMultiplayer<MyState>>()(
-  multiplayer(
-    // ... your state creator
-    {
-      namespace: 'debug-namespace',
-      apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
-      tokenGenerationUrl: '/api/generate-token',
-      
-      // Enhanced debugging
-      logLevel: LogLevel.DEBUG,
-      profiling: true,
-      
-      // Custom retry config for testing
-      retryConfig: {
-        maxRetries: 3,
-        baseDelay: 1000,
-        maxDelay: 5000,
-        backoffFactor: 1.5,
-      },
-      
-      // WebSocket client debugging
-      clientConfig: {
-        maxReconnectAttempts: 5,
-        throttling: {
-          enabled: true,
-          rateLimit: 10, // Lower rate limit for testing
-        }
-      },
-      
-      // Lifecycle debugging
-      onHydrate: (state) => {
-        console.log('🔄 State hydrated:', state);
-      },
-      
-      onConflict: (conflicts) => {
-        console.log('⚠️ Conflicts detected:', conflicts);
-        // Log detailed conflict information
-        conflicts.forEach((conflict, index) => {
-          console.log(`Conflict ${index + 1}:`, {
-            field: conflict.field,
-            local: conflict.localValue,
-            remote: conflict.remoteValue,
-            pending: conflict.pendingValue,
-          });
-        });
-        return { strategy: 'keep-remote' };
-      },
-    }
-  )
-);
+interface MultiplayerOptions<TState> {
+  namespace: string;              // Required: Unique identifier
+  apiBaseUrl: string;             // Required: HPKV API URL
+  apiKey?: string;                // Server-side only
+  tokenGenerationUrl?: string;    // Client-side only
+  sync?: Array<keyof TState>;    // Fields to sync (default: all non-function keys)
+  zFactor?: number;               // Storage depth (0-10, default: 1)
+  logLevel?: LogLevel;            // Logging verbosity
+  rateLimit?: number;             // Throttle to N req/s (match your HPKV tier)
+}
 ```
 
-## Documentation
-
-### Complete Guides
-
-- **[API Reference](./docs/API_REFERENCE.md)** - Complete API documentation with all types and methods
-- **[Token API Guide](./docs/TOKEN_API.md)** - Authentication setup and security best practices
-
-### Migration Guides
-
-- **[From v0.4.x to v0.5.x](./CHANGELOG.md)** - Breaking changes and migration steps
-- **[Converting Existing Stores](./docs/API_REFERENCE.md#migration)** - How to add multiplayer to existing stores
-
-## Examples Repository
-
-Check out the [`examples/`](./examples/) directory for complete working applications:
-
-- **[Next.js Todo App](./examples/nextjs-starter/)** - Full-stack collaborative todo application with TypeScript
-- **[Express Backend](./examples/express-starter/)** - Server-side store with REST API and client-side integration
-- **[Enhanced Usage Examples](./examples/enhanced-usage.tsx)** - Advanced patterns and use cases
-
-### Quick Examples
-
-| Example | Description | Features |
-|---------|-------------|----------|
-| [Live Poll](./examples/enhanced-usage.tsx#L1-L30) | Real-time voting system | Counters, instant updates |
-| [Collaborative Todos](./examples/nextjs-starter/) | Shared task management | CRUD operations, conflict resolution |
-| [Mixed Sync](./examples/enhanced-usage.tsx#L60-L100) | Partial state sharing | Selective sync, local preferences |
-| [Server Push](./examples/express-starter/) | Background notifications | Server-side updates, broadcasting |
-
-## Best Practices
-
-### 🏗️ Architecture Guidelines
-
-1. **Use Records for Collections**: When dealing with collections that multiple users might edit simultaneously, use Record types instead of arrays:
-   ```typescript
-   // ✅ Good: Conflict-free updates
-   todos: Record<string, Todo>
-   
-   // ❌ Avoid: Array conflicts
-   todos: Todo[]
-   ```
-
-2. **Namespace Strategy**: Use descriptive, versioned namespaces:
-   ```typescript
-   // ✅ Good: Clear and versioned
-   namespace: 'todo-app-v2'
-   
-   // ❌ Avoid: Generic or unversioned
-   namespace: 'app'
-   ```
-
-3. **Selective Sync**: Only sync what needs to be shared:
-   ```typescript
-   publishUpdatesFor: () => ['sharedData', 'globalSettings'],
-   subscribeToUpdatesFor: () => ['sharedData', 'globalSettings'],
-   ```
-
-### 🔐 Security Best Practices
-
-1. **API Key Protection**: Never expose API keys in client code
-2. **Token Validation**: Implement proper authentication in token endpoints
-3. **Rate Limiting**: Add rate limiting to token generation endpoints
-4. **CORS Configuration**: Configure CORS appropriately for production
-5. **Input Validation**: Validate all data before storing in state
-
-### ⚡ Performance Tips
-
-1. **zFactor Optimization**: Choose the right granularity level
-2. **Connection Monitoring**: Monitor connection health in production
-3. **Error Boundaries**: Implement proper error handling
-4. **Memory Management**: Use `destroy()` when components unmount
-5. **Debouncing**: Consider debouncing rapid state changes
-
-### 📊 Production Monitoring
+### Multiplayer State & Methods
 
 ```typescript
-// Production monitoring setup
-const useProductionStore = create<WithMultiplayer<State>>()(
-  multiplayer(
-    // ... state creator
-    {
-      namespace: 'production-app',
-      logLevel: LogLevel.ERROR, // Reduce noise in production
-      profiling: false, // Disable detailed profiling
-      retryConfig: {
-        maxRetries: 5,
-        baseDelay: 2000,
-        maxDelay: 30000,
-        backoffFactor: 2,
-      },
-      onConflict: (conflicts) => {
-        // Log conflicts for analysis
-        analytics.track('multiplayer_conflict', {
-          conflictCount: conflicts.length,
-          fields: conflicts.map(c => c.field),
-        });
-        return { strategy: 'keep-remote' };
-      },
-    }
-  )
-);
+// Access via store
+const { multiplayer } = useStore();
+
+// State (reactive)
+multiplayer.connectionState     // 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING' | 'RECONNECTING'
+multiplayer.hasHydrated        // boolean - Has initial sync completed
+
+multiplayer.performanceMetrics  // perfromance metrics
+
+const store = useStore();
+// Methods
+await store.multiplayer.reHydrate();        // Force sync with server
+await store.multiplayer.clearStorage();     // Clear all persisted data
+await store.multiplayer.disconnect();       // Close connection
+await store.multiplayer.connect();          // Establish connection
+await store.multiplayer.destroy();          // Cleanup (call on unmount)
+
+// Monitoring
+store.store.multiplayer.getConnectionStatus();    // Detailed connection info
+store.multiplayer.getMetrics();             // Performance metrics
 ```
+
+### Rate Limiting & Throttling
+
+HPKV has rate limits based on your tier (Free tier: 10 requests/second). The `rateLimit` option enables automatic throttling to avoid hitting these limits:
+
+```typescript
+{
+  namespace: 'high-frequency-app',
+  rateLimit: 10,  // Automatically throttle to 10 updates/second
+}
+```
+
+**For high-frequency updates** (e.g., mouse movements, real-time drawing):
+- Consider debouncing or throttling at the application level
+- Batch multiple changes into single updates
+- Use higher zFactor for granular updates to reduce operation size
+
+## Examples & Resources
+
+### 📦 Example Applications
+
+We provide two complete example applications demonstrating real-world usage:
+
+#### 1. **Next.js + React Example** ([`/examples/nextjs-todo`](./examples/nextjs-starter))
+A modern React application with TypeScript showing:
+- Full-stack setup with Next.js
+- Token generation endpoint implementation
+- React hooks integration
+- TypeScript
+
+#### 2. **Express + Vanilla JS Example** ([`/examples/express-vanilla`](./examples/express-starter))
+A traditional web application demonstrating:
+- Vanilla JavaScript (no framework)
+- HTML5 with real-time updates
+- Token endpoint with Express.js
+
+### 📚 Documentation
+
+- **[API Documentation](./docs/API_REFERENCE.md)** - Detailed API reference
+- **[Token Setup Guide](./docs/TOKEN_API.md)** - Authentication implementation
+- **[Migration Guide](./CHANGELOG.md)** - Upgrading from older versions
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
-
-### Development Setup
+We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 ```bash
 git clone https://github.com/hpkv-io/zustand-multiplayer.git
 cd zustand-multiplayer
 npm install
-npm run test
-npm run build
+npm test
 ```
-
-### Reporting Issues
-
-When reporting bugs, please include:
-- Node.js and package versions
-- Minimal reproduction case
-- Error messages and stack traces
-- Connection status and metrics (if available)
-
-## License
-
-MIT - see [LICENSE](./LICENSE) for details.
 
 ## Support
 
-- **Documentation**: [Complete guides and API reference](./docs/)
-- **Examples**: [Working applications](./examples/)
 - **Issues**: [GitHub Issues](https://github.com/hpkv-io/zustand-multiplayer/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/hpkv-io/zustand-multiplayer/discussions)
+- **Email**: support@hpkv.io
+
+## License
+
+MIT © [HPKV Team](https://hpkv.io)
 
 ---
 
-**Built with ❤️ by the HPKV Team** | [Website](https://hpkv.io) | [Dashboard](https://hpkv.io/dashboard) 
+**Built with ❤️ by the HPKV Team** | [Website](https://hpkv.io) | [Dashboard](https://hpkv.io/dashboard)

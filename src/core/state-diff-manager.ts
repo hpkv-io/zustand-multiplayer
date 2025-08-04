@@ -5,12 +5,10 @@ import { isPlainObject } from '../utils';
  */
 export class StateDiffManager {
   calculateDiff(oldValue: unknown, newValue: unknown): { type: 'full' | 'diff'; data: unknown } {
-    // Simple cases - always use full replacement
     if (oldValue === undefined || !isPlainObject(oldValue) || !isPlainObject(newValue)) {
       return { type: 'full', data: newValue };
     }
 
-    // Object diff calculation
     const diff = this.calculateObjectDiff(oldValue, newValue);
     return Object.keys(diff).length > 0
       ? { type: 'diff', data: diff }

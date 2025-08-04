@@ -113,7 +113,7 @@ interface TokenRequest {
   // Namespace to generate token for (required)
   namespace: string;
   // Array of specific keys the client needs to subscribe to
-  subscribedKeys: string[];
+  subscribedKeysAndPatterns: string[];
 }
 ```
 
@@ -122,13 +122,13 @@ interface TokenRequest {
 ```json
 {
   "namespace": "my-app-namespace",
-  "subscribedKeys": ["property1", "property2", "userState"]
+  "subscribedKeysAndPatterns": ["property1", "property2", "userState"]
 }
 ```
 
 **Note**: The TokenHelper automatically:
 
-- Uses the provided `subscribedKeys` for WebSocket subscription
+- Uses the provided `subscribedKeysAndPatterns` for WebSocket subscription
 - Generates an access pattern `^namespace:.*$` to restrict operations to the namespace
 - Creates scoped tokens that can only operate on keys within the specified namespace
 
@@ -163,22 +163,61 @@ interface TokenResponse {
 
 ## Implementation Options
 
-You have multiple ways to implement the token generation API using the provided `TokenHelper` class.
+You can implement the token generation API using the provided `TokenHelper` class.
 
-### Option 1: Framework-Specific Handlers (Easiest)
+### TokenHelper Class
 
-`TokenHelper` includes built-in handlers for popular frameworks:
+The `TokenHelper` class must be imported directly from the auth module:
+
+```typescript
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
+```
+
+#### Constructor
+
+```typescript
+new TokenHelper(apiKey: string, baseUrl: string)
+```
+
+#### Available Methods
+
+The `TokenHelper` provides two methods for token generation:
+
+##### `generateTokenForStore(namespace: string, subscribedKeysAnPatterns: string[]): Promise<string>`
+
+Generates a WebSocket token for a specific namespace.
+
+```typescript
+const tokenHelper = new TokenHelper(apiKey, baseUrl);
+const token = await tokenHelper.generateTokenForStore('my-app', ['my-app:todos', 'my-app:*']);
+```
+
+**Parameters:**
+
+- `namespace`: The store namespace
+- `subscribedKeysAnPatterns`: Array of keys and patterns to subscribe to (supports wildcards with `*`)
+
+##### `processTokenRequest(requestData: unknown): Promise<TokenResponse>`
+
+Processes a token request and returns a structured response.
+
+```typescript
+const response = await tokenHelper.processTokenRequest(req.body);
+// Returns: { namespace: 'my-app', token: 'eyJ...' }
+```
+
+### Implementation Examples
 
 #### Express.js
 
 ```typescript
 import express from 'express';
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
 const app = express();
 app.use(express.json());
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 app.post('/api/token', async (req, res) => {
   try {
@@ -188,11 +227,11 @@ app.post('/api/token', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Use the built-in Express handler
-    const handler = tokenHelper.createExpressHandler();
-    return handler(req, res);
+    // Process the token request
+    const response = await tokenHelper.processTokenRequest(req.body);
+    res.status(200).json(response);
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 ```
@@ -201,9 +240,9 @@ app.post('/api/token', async (req, res) => {
 
 ```typescript
 // pages/api/token.ts
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 export default async function handler(req, res) {
   try {
@@ -213,10 +252,11 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Use the built-in Next.js handler
-    return tokenHelper.createNextApiHandler()(req, res);
+    // Process the token request
+    const response = await tokenHelper.processTokenRequest(req.body);
+    res.status(200).json(response);
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 }
 ```
@@ -225,10 +265,10 @@ export default async function handler(req, res) {
 
 ```typescript
 import Fastify from 'fastify';
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
 const fastify = Fastify();
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 fastify.post('/api/token', async (request, reply) => {
   try {
@@ -238,23 +278,23 @@ fastify.post('/api/token', async (request, reply) => {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    // Use the built-in Fastify handler
-    const handler = tokenHelper.createFastifyHandler();
-    return handler(request, reply);
+    // Process the token request
+    const response = await tokenHelper.processTokenRequest(request.body);
+    reply.status(200).send(response);
   } catch (error) {
-    reply.code(401).send({ error: error.message });
+    reply.code(500).send({ error: error.message });
   }
 });
 ```
 
-### Option 2: Framework-Agnostic Request Processing
+#### Custom Implementation
 
-For custom implementations or other frameworks, use the `processTokenRequest` method:
+For other frameworks or custom implementations:
 
 ```typescript
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 // In your route handler (works with any framework):
 async function handleTokenRequest(requestBody, authHeader) {
@@ -275,14 +315,14 @@ async function handleTokenRequest(requestBody, authHeader) {
 }
 ```
 
-### Option 3: Direct Token Generation
+#### Direct Token Generation
 
 For complete custom implementations:
 
 ```typescript
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 async function generateToken(requestBody, authHeader) {
   // 1. Authenticate user
@@ -291,12 +331,12 @@ async function generateToken(requestBody, authHeader) {
     throw new Error('Unauthorized');
   }
 
-  // 2. Extract namespace and subscribedKeys from your request
+  // 2. Extract namespace and subscribedKeysAndPatterns from your request
   const namespace = requestBody.namespace;
-  const subscribedKeys = requestBody.subscribedKeys || []; // Default to empty array if not provided
+  const subscribedKeysAndPatterns = requestBody.subscribedKeysAndPatterns || [];
 
   // 3. Generate the token directly
-  const token = await tokenHelper.generateTokenForStore(namespace, subscribedKeys);
+  const token = await tokenHelper.generateTokenForStore(namespace, subscribedKeysAndPatterns);
 
   // 4. Return in your response format
   return { namespace, token };
@@ -332,425 +372,3 @@ async function generateToken(requestBody, authHeader) {
 - **Validate user permissions** before generating tokens
 - **Use HTTPS** for all token generation requests
 - **Implement rate limiting** to prevent abuse
-
-## Advanced Implementation Patterns
-
-### Multi-Tenant Token Generation
-
-For applications serving multiple organizations or teams:
-
-```typescript
-// Advanced token generation with tenant isolation
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
-
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    // 1. Authenticate user
-    const user = await authenticateUser(req.headers.authorization);
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { namespace } = req.body;
-
-    // 2. Extract tenant from namespace or user context
-    const tenantId = extractTenantId(namespace, user);
-
-    // 3. Validate tenant access
-    if (!(await validateTenantAccess(user.id, tenantId))) {
-      return res.status(403).json({ error: 'Tenant access denied' });
-    }
-
-    // 4. Generate scoped namespace
-    const scopedNamespace = `tenant:${tenantId}:${namespace}`;
-
-    // 5. Create modified request with scoped namespace
-    const scopedRequest = {
-      ...req.body,
-      namespace: scopedNamespace,
-    };
-
-    const response = await tokenHelper.processTokenRequest(scopedRequest);
-
-    // 6. Log for audit
-    await auditLog({
-      userId: user.id,
-      tenantId,
-      namespace: scopedNamespace,
-      action: 'token_generated',
-      timestamp: Date.now(),
-    });
-
-    res.status(200).json(response);
-  } catch (error) {
-    console.error('Token generation failed:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-async function extractTenantId(namespace: string, user: any): Promise<string> {
-  // Extract tenant from namespace pattern or user context
-  const tenantMatch = namespace.match(/^tenant:([^:]+):/);
-  if (tenantMatch) {
-    return tenantMatch[1];
-  }
-
-  // Fallback to user's primary tenant
-  return user.primaryTenantId;
-}
-
-async function validateTenantAccess(userId: string, tenantId: string): Promise<boolean> {
-  // Check if user has access to the tenant
-  const membership = await db.tenantMemberships.findFirst({
-    where: { userId, tenantId, status: 'active' },
-  });
-
-  return !!membership;
-}
-```
-
-### Role-Based Access Control
-
-Implement different access levels based on user roles:
-
-```typescript
-interface UserRole {
-  role: 'admin' | 'editor' | 'viewer';
-  permissions: string[];
-}
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const user = await authenticateUser(req.headers.authorization);
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { namespace, subscribedKeys } = req.body;
-    const userRole = await getUserRole(user.id, namespace);
-
-    // Filter subscribed keys based on role
-    const allowedKeys = filterKeysByRole(subscribedKeys, userRole);
-
-    if (allowedKeys.length === 0) {
-      return res.status(403).json({ error: 'No access to requested keys' });
-    }
-
-    // Generate token with filtered keys
-    const filteredRequest = {
-      namespace,
-      subscribedKeys: allowedKeys,
-    };
-
-    const response = await tokenHelper.processTokenRequest(filteredRequest);
-    res.status(200).json(response);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-}
-
-function filterKeysByRole(keys: string[], role: UserRole): string[] {
-  const rolePermissions = {
-    admin: ['*'], // Access to all keys
-    editor: ['todos', 'settings', 'comments'], // Write access
-    viewer: ['todos', 'comments'], // Read-only access
-  };
-
-  const allowedPatterns = rolePermissions[role.role] || [];
-
-  return keys.filter(key => {
-    return allowedPatterns.some(pattern => {
-      if (pattern === '*') return true;
-      return key.startsWith(pattern);
-    });
-  });
-}
-```
-
-### Rate Limiting Implementation
-
-Implement comprehensive rate limiting:
-
-```typescript
-import rateLimit from 'express-rate-limit';
-import RedisStore from 'rate-limit-redis';
-import Redis from 'ioredis';
-
-const redis = new Redis(process.env.REDIS_URL);
-
-// Create rate limiters for different scenarios
-const globalLimiter = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
-  }),
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many token requests from this IP',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const userLimiter = rateLimit({
-  store: new RedisStore({
-    sendCommand: (...args: string[]) => redis.call(...args),
-  }),
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // Limit each user to 10 tokens per minute
-  keyGenerator: req => req.user?.id || req.ip,
-  message: 'Too many token requests for this user',
-});
-
-// Apply rate limiting middleware
-app.use('/api/generate-token', globalLimiter);
-app.use('/api/generate-token', userLimiter);
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Token generation logic here
-}
-```
-
-### Token Caching Strategy
-
-Implement intelligent token caching to reduce API calls:
-
-```typescript
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
-import NodeCache from 'node-cache';
-
-// Cache tokens for 1.5 hours (tokens expire in 2 hours)
-const tokenCache = new NodeCache({ stdTTL: 5400 });
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const user = await authenticateUser(req.headers.authorization);
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { namespace, subscribedKeys } = req.body;
-
-    // Create cache key based on user, namespace, and keys
-    const cacheKey = createCacheKey(user.id, namespace, subscribedKeys);
-
-    // Check cache first
-    let response = tokenCache.get(cacheKey);
-
-    if (!response) {
-      // Generate new token
-      response = await tokenHelper.processTokenRequest(req.body);
-
-      // Cache the response
-      tokenCache.set(cacheKey, response);
-
-      console.log(`Generated new token for ${user.id}:${namespace}`);
-    } else {
-      console.log(`Using cached token for ${user.id}:${namespace}`);
-    }
-
-    res.status(200).json(response);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-}
-
-function createCacheKey(userId: string, namespace: string, keys: string[]): string {
-  const keyHash = hashObject(keys.sort());
-  return `token:${userId}:${namespace}:${keyHash}`;
-}
-
-function hashObject(obj: any): string {
-  return require('crypto').createHash('md5').update(JSON.stringify(obj)).digest('hex');
-}
-```
-
-## Testing Your Token Endpoint
-
-### Unit Tests
-
-```typescript
-import { createMocks } from 'node-mocks-http';
-import handler from '../pages/api/generate-token';
-
-describe('/api/generate-token', () => {
-  it('should generate token for valid request', async () => {
-    const { req, res } = createMocks({
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer valid-jwt-token',
-      },
-      body: {
-        namespace: 'test-app',
-        subscribedKeys: ['todos', 'settings'],
-      },
-    });
-
-    // Mock authentication
-    jest.spyOn(auth, 'authenticateUser').mockResolvedValue({
-      id: 'user-123',
-      email: 'test@example.com',
-    });
-
-    await handler(req, res);
-
-    expect(res._getStatusCode()).toBe(200);
-    const data = JSON.parse(res._getData());
-    expect(data).toHaveProperty('token');
-    expect(data).toHaveProperty('namespace', 'test-app');
-  });
-
-  it('should reject unauthorized requests', async () => {
-    const { req, res } = createMocks({
-      method: 'POST',
-      headers: {},
-      body: {
-        namespace: 'test-app',
-        subscribedKeys: ['todos'],
-      },
-    });
-
-    await handler(req, res);
-
-    expect(res._getStatusCode()).toBe(401);
-  });
-});
-```
-
-### Integration Tests
-
-```typescript
-describe('Token Integration', () => {
-  it('should work with multiplayer store', async () => {
-    // Setup test server
-    const server = createTestServer();
-    const tokenEndpoint = `${server.url}/api/generate-token`;
-
-    // Create store with test endpoint
-    const store = create(
-      multiplayer(
-        set => ({
-          counter: 0,
-          increment: () =>
-            set(state => {
-              state.counter += 1;
-            }),
-        }),
-        {
-          namespace: 'integration-test',
-          apiBaseUrl: process.env.TEST_HPKV_API_BASE_URL!,
-          tokenGenerationUrl: tokenEndpoint,
-        },
-      ),
-    );
-
-    // Test connection
-    await store.getState().multiplayer.connect();
-    expect(store.getState().multiplayer.connectionState).toBe('CONNECTED');
-
-    // Test state updates
-    store.getState().increment();
-    expect(store.getState().counter).toBe(1);
-
-    // Cleanup
-    await store.getState().multiplayer.destroy();
-    server.close();
-  });
-});
-```
-
-## Security Checklist
-
-### ✅ Essential Security Measures
-
-- [ ] **API Key Protection**: API keys stored securely in environment variables
-- [ ] **HTTPS Only**: All token requests use HTTPS in production
-- [ ] **Authentication**: Proper user authentication before token generation
-- [ ] **Authorization**: User permissions validated for requested namespaces
-- [ ] **Rate Limiting**: Implemented at both IP and user levels
-- [ ] **Input Validation**: All request data validated and sanitized
-- [ ] **Error Handling**: No sensitive information leaked in error responses
-- [ ] **Audit Logging**: Token generation events logged for security monitoring
-
-### 🔒 Advanced Security Measures
-
-- [ ] **Multi-Factor Authentication**: MFA required for sensitive operations
-- [ ] **IP Whitelisting**: Restrict token generation to known IP ranges
-- [ ] **Token Rotation**: Implement automatic token refresh
-- [ ] **Anomaly Detection**: Monitor for unusual token generation patterns
-- [ ] **CORS Configuration**: Properly configured for your domain
-- [ ] **SQL Injection Protection**: Use parameterized queries
-- [ ] **XSS Protection**: Sanitize all user inputs
-- [ ] **CSRF Protection**: Implement CSRF tokens for web applications
-
-## Troubleshooting
-
-### Common Issues
-
-#### Token Generation Fails
-
-**Symptoms**: 500 errors from token endpoint
-
-**Solutions**:
-
-1. Verify API key and base URL are correct
-2. Check HPKV service availability
-3. Review server logs for detailed error messages
-4. Test API key with direct HPKV API calls
-
-#### Authentication Errors
-
-**Symptoms**: 401/403 responses
-
-**Solutions**:
-
-1. Verify JWT token format and signature
-2. Check token expiration
-3. Validate user permissions in your system
-4. Review authentication middleware logs
-
-#### Rate Limiting Issues
-
-**Symptoms**: 429 Too Many Requests
-
-**Solutions**:
-
-1. Implement exponential backoff in clients
-2. Review rate limiting thresholds
-3. Consider token caching strategies
-4. Monitor usage patterns
-
-### Debug Mode
-
-Enable debug logging for token generation:
-
-```typescript
-// Add debug logging to your token endpoint
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const debug = process.env.NODE_ENV === 'development';
-
-  if (debug) {
-    console.log('Token request received:', {
-      headers: req.headers,
-      body: req.body,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  try {
-    // ... token generation logic
-
-    if (debug) {
-      console.log('Token generated successfully:', {
-        namespace: req.body.namespace,
-        keyCount: req.body.subscribedKeys?.length,
-      });
-    }
-  } catch (error) {
-    if (debug) {
-      console.error('Token generation failed:', error);
-    }
-    // ... error handling
-  }
-}
-```

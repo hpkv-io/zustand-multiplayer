@@ -64,32 +64,3 @@ export function escapeRegExp(string: string): string {
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
-
-/**
- * Sets a nested value in an object using a path array
- * @param obj The object to set the value in
- * @param segments Array of path segments
- * @param value The value to set
- */
-export function setNestedValue(
-  obj: Record<string, unknown>,
-  segments: string[],
-  value: unknown,
-): void {
-  if (segments.length === 0) return;
-
-  let current: Record<string, unknown> = obj;
-
-  for (let i = 0; i < segments.length - 1; i++) {
-    const segment = segments[i];
-
-    if (!current[segment] || !isPlainObject(current[segment])) {
-      current[segment] = {};
-    }
-
-    current = current[segment] as Record<string, unknown>;
-  }
-
-  const lastSegment = segments[segments.length - 1];
-  current[lastSegment] = value;
-}

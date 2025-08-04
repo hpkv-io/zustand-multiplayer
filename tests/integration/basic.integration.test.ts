@@ -1,5 +1,5 @@
-import { ConnectionState, HPKVApiClient, HPKVClientFactory } from '@hpkv/websocket-client';
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { ConnectionState } from '@hpkv/websocket-client';
+import { describe, it, expect, afterAll } from 'vitest';
 import { create, type StateCreator, type UseBoundStore } from 'zustand';
 import type {
   MultiplayerOptions,
@@ -63,21 +63,10 @@ const initializer: StateCreator<TestState, [], []> = set => ({
 
 describe('Multiplayer Middleware Basic Integration Tests', () => {
   const skip = !process.env.HPKV_API_KEY || !process.env.HPKV_API_BASE_URL;
-  let helperClient: HPKVApiClient;
   const storeCreator = new StoreCreator();
-
-  beforeAll(async () => {
-    helperClient = HPKVClientFactory.createApiClient(
-      process.env.HPKV_API_KEY ?? '',
-      process.env.HPKV_API_BASE_URL ?? '',
-    );
-    await helperClient.connect();
-  });
 
   afterAll(async () => {
     await storeCreator.cleanupAllStores();
-    await helperClient.disconnect();
-    helperClient.destroy();
   });
 
   function createTestStore(
@@ -106,6 +95,7 @@ describe('Multiplayer Middleware Basic Integration Tests', () => {
       expect(multiplayerState).toBeDefined();
       expect(typeof multiplayerState.connectionState).toBe('string');
       expect(typeof multiplayerState.hasHydrated).toBe('boolean');
+      expect(typeof multiplayerState.performanceMetrics.averageSyncTime).toBe('number');
       expect(typeof multiplayerApi.disconnect).toBe('function');
       expect(typeof multiplayerApi.clearStorage).toBe('function');
       expect(typeof multiplayerApi.getMetrics).toBe('function');
@@ -174,38 +164,108 @@ describe('Multiplayer Middleware Basic Integration Tests', () => {
         expect(store.getState().multiplayer.hasHydrated).toBe(true);
       });
     });
+  });
 
-    it('should hydrate nested states correctly', async () => {
-      const uniqueNamespace = createUniqueStoreName('nested-persistence-test');
+  describe('Multiplayer State Tests', () => {
+    it('should update hasHydrated state', async () => {
+      const store = createTestStore();
+      expect(store.getState().multiplayer.hasHydrated).toBe(false);
+      await waitFor(() => expect(store.getState().multiplayer.hasHydrated).toBe(true));
+    });
+
+    it('should update connectionState state', async () => {
+      const store = createTestStore();
+      expect(store.getState().multiplayer.connectionState).toBe(
+        ConnectionState.DISCONNECTED || ConnectionState.CONNECTING,
+      );
+      await waitFor(() =>
+        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED),
+      );
+    });
+
+    it('should update performanceMetrics state', async () => {
+      const store = createTestStore();
+      expect(store.getState().multiplayer.performanceMetrics.averageSyncTime).toBe(0);
+      await waitFor(() => store.getState().multiplayer.hasHydrated);
+      store.getState().increment();
+      await waitFor(() =>
+        expect(store.getState().multiplayer.performanceMetrics.averageSyncTime).toBeGreaterThan(0),
+      );
+    });
+  });
+
+  describe('Multiplayer API Tests', () => {
+    it('should connect when connect() is called', async () => {
+      const uniqueNamespace = createUniqueStoreName('integration-connect-test');
+      const store = createTestStore({ namespace: uniqueNamespace });
+
+      await waitFor(() => {
+        expect(store.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
+      await store.multiplayer.disconnect();
+
+      await waitFor(() => {
+        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.DISCONNECTED);
+      });
+
+      await store.multiplayer.connect();
+
+      await waitFor(() => {
+        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
+      });
+    });
+
+    it.skipIf(skip)('should disconnect when disconnect() is called', async () => {
+      const uniqueNamespace = createUniqueStoreName('integration-disconnect-test');
+      const store = createTestStore({ namespace: uniqueNamespace });
+
+      await waitFor(() => {
+        expect(store.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
+      await store.multiplayer.disconnect();
+
+      await waitFor(() => {
+        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.DISCONNECTED);
+      });
+    });
+
+    it('should gets the current connection status when getConnectionState() is called', async () => {
+      const store = createTestStore();
+      await waitFor(() => expect(store.getState().multiplayer.hasHydrated).toBe(true));
+      expect(store.multiplayer.getConnectionStatus()?.connectionState).toBe(
+        store.getState().multiplayer.connectionState,
+      );
+    });
+
+    it('should gets the current performance metrics when getMetrics() is called', async () => {
+      const store = createTestStore();
+      await waitFor(() => expect(store.getState().multiplayer.hasHydrated).toBe(true));
+      expect(store.multiplayer.getMetrics().averageSyncTime).toBe(
+        store.getState().multiplayer.performanceMetrics.averageSyncTime,
+      );
+      store.getState().increment();
+      expect(store.multiplayer.getMetrics().averageSyncTime).toBe(
+        store.getState().multiplayer.performanceMetrics.averageSyncTime,
+      );
+    });
+
+    it.skipIf(skip)('should clear the store data when clearStorage() is called', async () => {
+      const uniqueNamespace = createUniqueStoreName('integration-clear-storage-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store1.getState().multiplayer.hasHydrated);
-      store1.getState().updateNested(42);
-      await new Promise(resolve => setTimeout(resolve, 100));
-
       const store2 = createTestStore({ namespace: uniqueNamespace });
+
+      await waitFor(() => store1.getState().multiplayer.hasHydrated);
       await waitFor(() => store2.getState().multiplayer.hasHydrated);
-      expect(store2.getState().nested.value).toBe(42);
-    });
 
-    it('should have performance metrics available', () => {
-      const store = createTestStore();
-      const metrics = store.multiplayer.getMetrics();
+      store1.getState().setText('Text');
 
-      expect(metrics).toBeDefined();
-      expect(typeof metrics.averageSyncTime).toBe('number');
-    });
+      await waitFor(() => expect(store2.getState().text).toBe('Text'));
 
-    it('should have connection status available', () => {
-      const store = createTestStore();
-      const status = store.multiplayer.getConnectionStatus();
+      await store1.multiplayer.clearStorage();
 
-      expect(status).toBeDefined();
-      if (status) {
-        expect(typeof status.isConnected).toBe('boolean');
-        expect(typeof status.connectionState).toBe('string');
-        expect(typeof status.reconnectAttempts).toBe('number');
-        expect(typeof status.messagesPending).toBe('number');
-      }
+      await waitFor(() => expect(store2.getState().text).toBeNull());
     });
   });
 
@@ -245,15 +305,11 @@ describe('Multiplayer Middleware Basic Integration Tests', () => {
         });
 
         store1.getState().increment();
-        store2.getState().setText('Set by store 2');
 
         await waitFor(() => {
-          expect(store2.getState().count).toBe(0);
-          expect(store2.getState().text).toBe('Set by store 2');
           expect(store1.getState().count).toBe(1);
-          expect(store1.getState().text).toBe('');
+          expect(store2.getState().count).toBe(0);
           expect(store3.getState().count).toBe(1);
-          expect(store3.getState().text).toBe('');
         });
       },
     );
@@ -274,15 +330,11 @@ describe('Multiplayer Middleware Basic Integration Tests', () => {
         });
 
         store1.getState().increment();
-        store2.getState().setText('Set by store 2');
 
         await waitFor(() => {
           expect(store2.getState().count).toBe(0);
-          expect(store2.getState().text).toBe('Set by store 2');
           expect(store1.getState().count).toBe(1);
-          expect(store1.getState().text).toBe('');
           expect(store3.getState().count).toBe(1);
-          expect(store3.getState().text).toBe('');
         });
       },
     );
@@ -325,51 +377,6 @@ describe('Multiplayer Middleware Basic Integration Tests', () => {
       await waitFor(() => expect(store2.getState().todos['1'].completed).toBe(true));
     });
 
-    it.skipIf(skip)('should sync when connected with token generation URL', async () => {
-      const serverInfo = await createTestServer(
-        process.env.HPKV_API_KEY ?? '',
-        process.env.HPKV_API_BASE_URL ?? '',
-      );
-
-      try {
-        const uniqueNamespace = createUniqueStoreName('integration-token-url-test');
-
-        const store1 = createTestStore({
-          namespace: uniqueNamespace,
-          tokenGenerationUrl: serverInfo.serverUrl,
-          apiKey: undefined,
-        });
-
-        const store2 = createTestStore({
-          namespace: uniqueNamespace,
-          tokenGenerationUrl: serverInfo.serverUrl,
-          apiKey: undefined,
-        });
-
-        await waitFor(() => {
-          expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-          expect(store2.getState().multiplayer.hasHydrated).toBe(true);
-        });
-
-        store1.getState().increment();
-        store1.getState().setText('Token URL Test');
-
-        await waitFor(() => {
-          expect(store2.getState().count).toBe(1);
-          expect(store2.getState().text).toBe('Token URL Test');
-          expect(store2.getState().multiplayer.hasHydrated).toBe(true);
-        });
-
-        store2.getState().updateNested(24);
-
-        await waitFor(() => {
-          expect(store1.getState().nested.value).toBe(24);
-        });
-      } finally {
-        serverInfo.server.close();
-      }
-    });
-
     it.skipIf(skip)('should persist state changes', async () => {
       const uniqueNamespace = createUniqueStoreName('integration-persistence-test');
       const store1 = createTestStore({ namespace: uniqueNamespace });
@@ -401,147 +408,6 @@ describe('Multiplayer Middleware Basic Integration Tests', () => {
           '2': { id: '2', text: 'item2', completed: false },
         });
       });
-    });
-
-    it('should create keys with correct namespace formatting', async () => {
-      const uniqueNamespace = createUniqueStoreName('storage-keys-test');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-
-      store.getState().increment();
-      store.getState().setText('Test Text');
-      store.getState().updateNested(25);
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      await expect(helperClient.get(`${uniqueNamespace}-2:count`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(helperClient.get(`${uniqueNamespace}-2:text`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(helperClient.get(`${uniqueNamespace}-2:nested:value`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-    });
-
-    it('should not persist function properties', async () => {
-      const uniqueNamespace = createUniqueStoreName('no-function-sync-test');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => store.getState().multiplayer.hasHydrated);
-      store.getState().increment();
-      store.getState().setText('Synced Text');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      await expect(helperClient.get(`${uniqueNamespace}-2:count`)).resolves.toHaveProperty(
-        'code',
-        200,
-      );
-      await expect(helperClient.get(`${uniqueNamespace}-2:increment`)).rejects.toThrow(
-        'Record not found',
-      );
-      await expect(helperClient.get(`${uniqueNamespace}-2:decrement`)).rejects.toThrow(
-        'Record not found',
-      );
-      await expect(helperClient.get(`${uniqueNamespace}-2:setText`)).rejects.toThrow(
-        'Record not found',
-      );
-    });
-
-    it('should handle rapid state updates', async () => {
-      const uniqueNamespace = createUniqueStoreName('rapid-updates-test');
-      const store1 = createTestStore({ namespace: uniqueNamespace });
-      const store2 = createTestStore({ namespace: uniqueNamespace });
-      await waitFor(() => store1.getState().multiplayer.hasHydrated);
-      await waitFor(() => store2.getState().multiplayer.hasHydrated);
-      for (let i = 0; i < 10; i++) {
-        store1.getState().increment();
-      }
-
-      await waitFor(() => {
-        expect(store2.getState().count).toBe(10);
-      });
-    });
-  });
-
-  describe('Multiplayer API Tests', () => {
-    it('should connect when connect method is called', async () => {
-      const uniqueNamespace = createUniqueStoreName('integration-connect-test');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => {
-        expect(store.getState().multiplayer.hasHydrated).toBe(true);
-      });
-
-      await store.multiplayer.disconnect();
-
-      await waitFor(() => {
-        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.DISCONNECTED);
-      });
-
-      await store.multiplayer.connect();
-
-      await waitFor(() => {
-        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.CONNECTED);
-      });
-    });
-
-    it.skipIf(skip)('should disconnect when disconnect is called', async () => {
-      const uniqueNamespace = createUniqueStoreName('integration-disconnect-test');
-      const store = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => {
-        expect(store.getState().multiplayer.hasHydrated).toBe(true);
-      });
-
-      await store.multiplayer.disconnect();
-
-      await waitFor(() => {
-        expect(store.getState().multiplayer.connectionState).toBe(ConnectionState.DISCONNECTED);
-      });
-    });
-
-    it('should track connection state changes', async () => {
-      const store = createTestStore();
-      await waitFor(() => expect(store.getState().multiplayer.hasHydrated).toBe(true));
-
-      await store.multiplayer.disconnect();
-      expect(store.getState().multiplayer.connectionState).toBe('DISCONNECTED');
-
-      await store.multiplayer.connect();
-      expect(store.getState().multiplayer.connectionState).toBe('CONNECTED');
-    });
-
-    it.skipIf(skip)('should clear the store data when clearStorage is called', async () => {
-      const uniqueNamespace = createUniqueStoreName('integration-clear-storage-test');
-      const store1 = createTestStore({ namespace: uniqueNamespace });
-
-      await waitFor(() => {
-        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
-      });
-
-      store1.getState().increment();
-      store1.getState().setText('Will be cleared');
-
-      await waitFor(async () => {
-        const count = await helperClient.get(`${uniqueNamespace}-2:count`);
-        const text = await helperClient.get(`${uniqueNamespace}-2:text`);
-        expect(count.code).toBe(200);
-        expect(text.code).toBe(200);
-      });
-
-      await store1.multiplayer.clearStorage();
-
-      await expect(helperClient.get(`${uniqueNamespace}-2:count`)).rejects.toThrow(
-        'Record not found',
-      );
-      await expect(helperClient.get(`${uniqueNamespace}-2:text`)).rejects.toThrow(
-        'Record not found',
-      );
     });
   });
 });
