@@ -60,12 +60,27 @@ Next.js API routes provide a secure server-side endpoint for token generation:
 
 ```typescript
 // src/pages/api/generate-token.ts
+import { NextApiRequest, NextApiResponse } from 'next';
 import { TokenHelper } from '@hpkv/zustand-multiplayer';
 
-export default new TokenHelper(
-  process.env.HPKV_API_KEY!, 
-  process.env.HPKV_API_BASE_URL!
-).createNextApiHandler();
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ 
+      error: 'Method not allowed',
+      message: 'Only POST requests are supported'
+    });
+  }
+
+  try {
+    const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
+    const response = await tokenHelper.processTokenRequest(req.body);
+    return res.status(200).json(response);
+
+  } catch (error) {
+    console.error('Error generating token:', error);
+  }
+}
 ```
 
 This creates a `/api/generate-token` endpoint that generates authentication tokens securely.
@@ -86,105 +101,57 @@ interface Todo {
 }
 
 interface TodoState {
-  todos: Todo[];
+  todos: Record<string, Todo>;
   addTodo: (text: string) => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
 }
 
+
 export const useTodoStore = create<WithMultiplayer<TodoState>>()(
   multiplayer(
     set => ({
-      todos: [],
-      addTodo: (text: string) => 
-        set((state: TodoState) => ({
-          todos: [
-            ...state.todos,
-            {
-              id: Date.now().toString(),
-              text,
-              completed: false,
-            },
-          ],
-        })),
+      todos: {},
+      addTodo: (text: string) =>
+        set((state) => {
+          const id = Date.now().toString();
+          return {
+            ...state,
+            todos: {
+              ...state.todos,
+              [id]: {
+                id,
+                text,
+                completed: false,
+              }
+            }
+          }
+        }),
       toggleTodo: (id: string) =>
-        set((state: TodoState) => ({
-          todos: state.todos.map((todo) =>
-            todo.id === id
-              ? { ...todo, completed: !todo.completed }
-              : todo
-          ),
+        set((state) => ({
+          todos: {
+            ...state.todos,
+            [id]: {
+              ...state.todos[id],
+              completed: !state.todos[id].completed,
+            },
+          },
         })),
       removeTodo: (id: string) =>
-        set((state: TodoState) => ({
-          todos: [...state.todos.filter((todo) => todo.id !== id)],
+        set((state) => ({
+          todos: Object.fromEntries(
+            Object.entries(state.todos).filter(([key]) => key !== id)
+          ),
         })),
     }),
     {
       namespace: 'todo-store',
-      tokenGenerationUrl: `/api/generate-token`,
+      tokenGenerationUrl: `${process.env.NEXT_PUBLIC_SERVER_URL}/api/generate-token`,
       apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
     }
   )
 );
-```
 
-#### Key Points:
-- **TypeScript Integration**: `WithMultiplayer<TodoState>` provides type safety for multiplayer features
-- **Environment Variables**: Uses Next.js environment variable conventions
-- **API Route**: Points to the Next.js API route for token generation
-
-### Component Architecture
-
-#### Main App Component
-```typescript
-// src/components/TodoApp.tsx
-const TodoApp: React.FC = () => {
-  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
-
-  return (
-    <div className={styles['todo-app']}>
-      <h1>Collaborative ToDo App</h1>
-      <ConnectionStatus />
-      <div className={styles['todo-card']}>
-        {/* Filter buttons */}
-        <TodoList filter={filter} />
-        <TodoInput />
-      </div>
-    </div>
-  );
-};
-```
-
-#### Using the Store in Components
-```typescript
-// src/components/TodoList.tsx
-const TodoList: React.FC<TodoListProps> = ({ filter }) => {
-  const todos = useTodoStore(state => state.todos);
-  const toggleTodo = useTodoStore(state => state.toggleTodo);
-  const removeTodo = useTodoStore(state => state.removeTodo);
-
-  // Component logic...
-};
-```
-
-#### Connection Status Monitoring
-```typescript
-// src/components/ConnectionStatus.tsx
-const ConnectionStatus: React.FC = () => {
-  const multiplayer = useTodoStore((state) => state.multiplayer);
-
-  return (
-    <div className={styles['connection-status']}>
-      <div className={`${styles['status-indicator']} ${
-        multiplayer.connectionState === ConnectionState.CONNECTED 
-          ? styles['connected'] 
-          : styles['disconnected']
-      }`} />
-      <span>{multiplayer.connectionState}</span>
-    </div>
-  );
-};
 ```
 
 ## Testing Multiplayer Functionality
@@ -220,8 +187,3 @@ nextjs-starter/
 ├── next.config.ts          # Next.js configuration
 └── .env.local              # Environment variables
 ```
-
-## Next Steps
-
-- Explore the [main documentation](../../README.md) for advanced features
-- Check out other examples in the repository

@@ -1,47 +1,87 @@
 # API Reference
 
-Complete reference for the Zustand Multiplayer Middleware.
+Complete reference for the Zustand Multiplayer Middleware v0.5.0.
 
 ## Table of Contents
 
+- [Quick Reference](#quick-reference)
 - [Types](#types)
   - [Core Types](#core-types)
   - [Configuration Types](#configuration-types)
-  - [Utility Types](#utility-types)
 - [Functions](#functions)
   - [`multiplayer(initializer, options)`](#multiplayerinitializer-options)
-- [Multiplayer State API](#multiplayer-state-api)
+- [Multiplayer Store API](#multiplayer-store-api)
 - [Configuration Options](#configuration-options)
 - [Token Helper API](#token-helper-api)
-- [Error Types](#error-types)
 - [Performance Monitoring](#performance-monitoring)
-- [Utility Functions](#utility-functions)
+- [Connection Management](#connection-management)
+- [Logging](#logging)
+- [Best Practices](#best-practices)
+- [Migration Guide](#migration-guide)
+- [Examples](#examples)
 
-## Exports
+## Quick Reference
 
-The main package exports the following:
+### Essential Imports
 
 ```typescript
-// Core multiplayer functionality
-export { multiplayer } from './multiplayer';
-export type {
-  MultiplayerOptions,
+import { create } from 'zustand';
+import {
+  multiplayer,
   WithMultiplayer,
+  MultiplayerOptions,
   MultiplayerState,
-} from './types/multiplayer-types';
+  LogLevel,
+  Logger,
+  createLogger,
+  generateClientId,
+} from '@hpkv/zustand-multiplayer';
+import { ConnectionState } from '@hpkv/websocket-client';
+```
 
-// Token generation utilities
-export { TokenHelper, TokenRequest, TokenResponse } from './auth/token-helper';
+### Basic Store Setup
 
-// Storage interface
-export { HPKVStorage } from './storage/hpkv-storage';
-export { StorageKeyManager } from './storage/storage-key-manager';
+```typescript
+interface MyState {
+  data: Record<string, any>;
+  updateData: (key: string, value: any) => void;
+}
 
-// Logging utilities
-export * from './monitoring/logger';
+const useStore = create<WithMultiplayer<MyState>>()(
+  multiplayer(
+    set => ({
+      data: {},
+      updateData: (key, value) =>
+        set(state => ({
+          ...state,
+          data: { ...state.data, [key]: value },
+        })),
+    }),
+    {
+      namespace: 'my-app',
+      apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
+      tokenGenerationUrl: '/api/generate-token',
+    },
+  ),
+);
+```
 
-// Utility functions
-export * from './utils';
+### Token Generation
+
+```typescript
+// pages/api/generate-token.ts
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
+
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
+
+export default async function handler(req, res) {
+  try {
+    const response = await tokenHelper.processTokenRequest(req.body);
+    res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
 ```
 
 ## Types
@@ -70,27 +110,49 @@ const useStore = create<WithMultiplayer<MyState>>()(multiplayer(/* ... */));
 
 #### `MultiplayerState`
 
-Interface for the `multiplayer` object added to your store.
+State properties added to your store by the multiplayer middleware.
 
 ```typescript
 interface MultiplayerState {
   connectionState: ConnectionState; // Current connection state
   hasHydrated: boolean; // Whether initial hydration completed
-
-  // Methods
-  hydrate: () => Promise<void>; // Force hydration from server
-  clearStorage: () => Promise<void>; // Clear all stored data
-  disconnect: () => Promise<void>; // Disconnect from server
-  connect: () => Promise<void>; // Connect to server
-  destroy: () => Promise<void>; // Cleanup all resources
-  getConnectionStatus: () => ConnectionStats | null; // Get connection info
-  getMetrics: () => PerformanceMetrics; // Get performance metrics
+  performanceMetrics: PerformanceMetrics; // Performance statistics
 }
+```
+
+#### `MultiplayerStoreApi<S>`
+
+Enhanced store API with multiplayer methods.
+
+```typescript
+type MultiplayerStoreApi<S> = StoreApi<S> & {
+  multiplayer: {
+    reHydrate: () => Promise<void>; // Force hydration from server
+    clearStorage: () => Promise<void>; // Clear all stored data
+    disconnect: () => Promise<void>; // Disconnect from server
+    connect: () => Promise<void>; // Connect to server
+    destroy: () => Promise<void>; // Cleanup all resources
+    getConnectionStatus: () => ConnectionStats | null; // Get connection info
+    getMetrics: () => PerformanceMetrics; // Get performance metrics
+  };
+};
+```
+
+**Note:** Access these methods via `store.multiplayer`, not through state:
+
+```typescript
+// Correct usage
+const store = useStore;
+await store.multiplayer.reHydrate();
+const metrics = store.multiplayer.getMetrics();
+
+// Not through state
+// store.getState().multiplayer.reHydrate() // ❌ Wrong
 ```
 
 #### `ConnectionState`
 
-Enum representing the current connection status:
+Enum representing the current connection status (from `@hpkv/websocket-client`):
 
 ```typescript
 enum ConnectionState {
@@ -124,31 +186,8 @@ Performance monitoring data:
 
 ```typescript
 interface PerformanceMetrics {
-  stateChangesProcessed: number;
-  averageHydrationTime: number;
-  averageSyncTime: number;
+  averageSyncTime: number; // Average time for sync operations (ms)
 }
-```
-
-#### `ImmerStateCreator<T>`
-
-Enhanced state creator that supports Immer-style mutations:
-
-```typescript
-type ImmerStateCreator<
-  T,
-  Mis extends [StoreMutatorIdentifier, unknown][] = [],
-  Mos extends [StoreMutatorIdentifier, unknown][] = [],
-  U = T,
-> = (
-  setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void,
-  getState: () => T,
-  store: {
-    setState: (partial: T | Partial<T> | ((state: Draft<T>) => void), replace?: boolean) => void;
-    getState: () => T;
-    subscribe: (listener: (state: T, prevState: T) => void) => () => void;
-  },
-) => U;
 ```
 
 ### Configuration Types
@@ -168,60 +207,14 @@ interface MultiplayerOptions<TState> {
   tokenGenerationUrl?: string; // For client-side usage
 
   // Selective synchronization
-  publishUpdatesFor?: () => Array<keyof TState>; // Fields to publish
-  subscribeToUpdatesFor?: () => Array<keyof TState>; // Fields to subscribe to
+  sync?: Array<keyof TState>; // Fields to synchronize (default: all non-function fields)
 
   // Storage granularity
   zFactor?: number; // Granularity depth (0-10, default: 2)
 
-  // Lifecycle hooks
-  onHydrate?: (state: TState) => void;
-  onConflict?: (conflicts: ConflictInfo<TState>[]) => ConflictResolution<TState>;
-
   // Configuration
   logLevel?: LogLevel; // Logging verbosity
-  profiling?: boolean; // Enable performance metrics
-  retryConfig?: RetryConfig; // Retry configuration
-  clientConfig?: ConnectionConfig; // WebSocket client config
-}
-```
-
-#### `ConflictInfo<TState>`
-
-Information about a single conflict.
-
-```typescript
-interface ConflictInfo<TState> {
-  field: keyof TState; // The conflicted field
-  localValue: unknown; // Value before disconnection
-  remoteValue: unknown; // Current server value
-  pendingValue: unknown; // Your pending change
-}
-```
-
-#### `ConflictResolution<TState>`
-
-Resolution strategy for conflicts.
-
-```typescript
-interface ConflictResolution<TState> {
-  strategy: ConflictStrategy;
-  mergedValues?: Partial<TState>; // Required if strategy is 'merge'
-}
-
-type ConflictStrategy = 'keep-remote' | 'keep-local' | 'merge';
-```
-
-#### `RetryConfig`
-
-Configuration for retry behavior:
-
-```typescript
-interface RetryConfig {
-  maxRetries: number;
-  baseDelay: number;
-  maxDelay: number;
-  backoffFactor: number;
+  rateLimit?: number; // Messages per second limit
 }
 ```
 
@@ -231,83 +224,32 @@ Logging verbosity levels:
 
 ```typescript
 enum LogLevel {
-  NONE = 0,
-  ERROR = 1,
+  DEBUG = 0,
+  INFO = 1,
   WARN = 2,
-  INFO = 3,
-  DEBUG = 4,
+  ERROR = 3,
+  NONE = 4,
 }
-```
-
-### Utility Types
-
-#### `TokenRequest`
-
-Request format for token generation endpoints:
-
-```typescript
-interface TokenRequest {
-  /** Store name to generate token for */
-  namespace: string;
-  /** Keys and patterns to subscribe to */
-  subscribedKeysAndPatterns: string[];
-}
-```
-
-#### `TokenResponse`
-
-Response format from token generation endpoints:
-
-```typescript
-interface TokenResponse {
-  /** The namespace the token is for */
-  namespace: string;
-  /** The generated WebSocket token */
-  token: string;
-}
-```
-
-#### `SerializableValue`
-
-Type for values that can be safely serialized and stored:
-
-```typescript
-type SerializableValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | SerializableValue[]
-  | { [key: string]: SerializableValue };
-```
-
-#### `PathExtractable`
-
-Type constraint for state that can have paths extracted:
-
-```typescript
-type PathExtractable = Record<string, SerializableValue>;
 ```
 
 ## Functions
 
 ### `multiplayer(initializer, options)`
 
-The main middleware function that wraps your Zustand state creator with Immer support.
+The main middleware function that wraps your Zustand state creator.
 
 **Signature:**
 
 ```typescript
 function multiplayer<T>(
-  initializer: ImmerStateCreator<T, [], [], T>,
-  options: MultiplayerOptions<T>,
-): StateCreator<T & { multiplayer: MultiplayerState }, [], []>;
+  initializer: StateCreator<T, [], [], Omit<T, 'multiplayer'>>,
+  options: MultiplayerOptions<Omit<T, 'multiplayer'>>,
+): StateCreator<WithMultiplayer<T>, [], []>;
 ```
 
 **Parameters:**
 
-- `initializer`: Your Zustand state creator function with Immer support
+- `initializer`: Your Zustand state creator function
 - `options`: Configuration object (see [Configuration Options](#configuration-options))
 
 **Returns:** A Zustand-compatible state creator with multiplayer functionality
@@ -320,15 +262,19 @@ const useStore = create<WithMultiplayer<MyState>>()(
     (set, get) => ({
       count: 0,
       todos: {},
-      // Immer-style updates with arrow functions
       increment: () =>
-        set(state => {
-          state.count += 1;
-        }),
+        set(state => ({
+          count: state.count + 1,
+        })),
       addTodo: (text: string) =>
         set(state => {
           const id = Date.now().toString();
-          state.todos[id] = { id, text, completed: false };
+          return {
+            todos: {
+              ...state.todos,
+              [id]: { id, text, completed: false },
+            },
+          };
         }),
     }),
     {
@@ -341,9 +287,9 @@ const useStore = create<WithMultiplayer<MyState>>()(
 );
 ```
 
-**State Update Types:**
+**State Update Patterns:**
 
-The multiplayer middleware supports multiple state update patterns:
+The multiplayer middleware supports standard Zustand state update patterns:
 
 ```typescript
 // Direct state object
@@ -352,27 +298,30 @@ set({ count: 5 });
 // Partial state update
 set(state => ({ count: state.count + 1 }));
 
-// Immer-style mutations (arrow functions)
-set(state => {
-  state.count += 1;
-  state.todos[id] = newTodo;
-});
-
-// Changes and deletions format
-set({
-  changes: { count: 5 },
-  deletions: [{ path: ['todos', 'old-id'] }],
-});
+// Functional update
+set(state => ({
+  ...state,
+  todos: {
+    ...state.todos,
+    [id]: newTodo,
+  },
+}));
 ```
 
-## Multiplayer State API
+## Multiplayer Store API
 
-### `hydrate(): Promise<void>`
+Access multiplayer methods via the store's `multiplayer` property:
+
+```typescript
+const store = useStore; // Your store reference
+```
+
+### `reHydrate(): Promise<void>`
 
 Manually triggers state synchronization from the server.
 
 ```typescript
-await store.getState().multiplayer.hydrate();
+await store.multiplayer.reHydrate();
 ```
 
 **Use cases:**
@@ -386,7 +335,7 @@ await store.getState().multiplayer.hydrate();
 Removes all data associated with the store's namespace from HPKV.
 
 ```typescript
-await store.getState().multiplayer.clearStorage();
+await store.multiplayer.clearStorage();
 ```
 
 **⚠️ Warning:** This affects all clients using the same namespace.
@@ -396,7 +345,7 @@ await store.getState().multiplayer.clearStorage();
 Manually establishes connection to HPKV.
 
 ```typescript
-await store.getState().multiplayer.connect();
+await store.multiplayer.connect();
 ```
 
 **Note:** Connection is usually automatic. Use for manual reconnection scenarios.
@@ -406,7 +355,7 @@ await store.getState().multiplayer.connect();
 Closes the WebSocket connection.
 
 ```typescript
-await store.getState().multiplayer.disconnect();
+await store.multiplayer.disconnect();
 ```
 
 **Note:** Automatic reconnection may still occur based on configuration.
@@ -416,7 +365,7 @@ await store.getState().multiplayer.disconnect();
 Permanently destroys the multiplayer instance and cleans up resources.
 
 ```typescript
-await store.getState().multiplayer.destroy();
+await store.multiplayer.destroy();
 ```
 
 **Use cases:**
@@ -430,7 +379,7 @@ await store.getState().multiplayer.destroy();
 Returns detailed connection information.
 
 ```typescript
-const status = store.getState().multiplayer.getConnectionStatus();
+const status = store.multiplayer.getConnectionStatus();
 if (status?.isConnected) {
   console.log('Connected with', status.reconnectAttempts, 'reconnect attempts');
 }
@@ -441,9 +390,8 @@ if (status?.isConnected) {
 Returns performance monitoring data.
 
 ```typescript
-const metrics = store.getState().multiplayer.getMetrics();
-console.log('State changes processed:', metrics.stateChangesProcessed);
-console.log('Average hydration time:', metrics.averageHydrationTime.toFixed(1) + 'ms');
+const metrics = store.multiplayer.getMetrics();
+console.log('Average sync time:', metrics.averageSyncTime.toFixed(1) + 'ms');
 ```
 
 ## Configuration Options
@@ -476,8 +424,6 @@ Your HPKV API base URL from the dashboard.
 }
 ```
 
-## Configuration Details
-
 ### Authentication Options
 
 Choose one based on your environment:
@@ -504,25 +450,13 @@ URL of your token generation endpoint.
 
 ### Selective Synchronization
 
-#### `publishUpdatesFor?: () => Array<keyof TState>`
+#### `sync?: Array<keyof TState>`
 
-Controls which state changes are sent to other clients.
-
-```typescript
-{
-  publishUpdatesFor: () => ['todos', 'settings']; // Only sync these fields
-}
-```
-
-**Default:** All non-function properties
-
-#### `subscribeToUpdatesFor?: () => Array<keyof TState>`
-
-Controls which remote changes this client receives.
+Controls which state fields are synchronized.
 
 ```typescript
 {
-  subscribeToUpdatesFor: () => ['todos', 'users']; // Only receive these fields
+  sync: ['todos', 'settings']; // Only sync these fields
 }
 ```
 
@@ -544,95 +478,32 @@ Controls the depth level for granular storage optimization. This option determin
 
 **Behavior by value:**
 
-- **zFactor: 0** - Basic granularity: Each top-level property gets its own storage key
-- **zFactor: 1** - Store at depth 1: Each nested property at depth 2 gets its own key
-- **zFactor: 2** - Store at depth 2: Each nested property at depth 3 gets its own key (default)
-- **zFactor: 4-10** - Store at specified depth: More granular storage for deeply nested data
+- **zFactor: 0** - Each top-level property gets its own storage key
+- **zFactor: 1** - Properties at depth 2 get their own keys
+- **zFactor: 2** - Properties at depth 3 get their own keys (default)
+- **zFactor: 3-10** - Store at specified depth for deeply nested data
+
+**Example with zFactor: 0:**
+
+```typescript
+// Storage keys created:
+// namespace-1:user -> { "profile": {...}, "preferences": {...} }
+// namespace-1:todos -> { "1": {...} }
+```
 
 **Example with zFactor: 1:**
 
 ```typescript
-// State structure
-{
-  user: {
-    profile: { name: "John", email: "john@example.com" },
-    preferences: { theme: "dark" }
-  },
-  todos: {
-    "1": { id: "1", text: "Buy milk", completed: false }
-  }
-}
-
 // Storage keys created:
-// namespace:user:profile -> { "name": "John", "email": "john@example.com" }
-// namespace:user:preferences -> { "theme": "dark" }
-// namespace:todos:1 -> { "id": "1", "text": "Buy milk", "completed": false }
-```
-
-**Example with zFactor: 2:**
-
-```typescript
-// Same state structure, but more granular storage:
-// namespace:user:profile:name -> "John"
-// namespace:user:profile:email -> "john@example.com"
-// namespace:user:preferences:theme -> "dark"
-// namespace:todos:1:id -> "1"
-// namespace:todos:1:text -> "Buy milk"
-// namespace:todos:1:completed -> false
+// namespace-2:user:profile -> { "name": "John", "email": "john@example.com" }
+// namespace-2:user:preferences -> { "theme": "dark" }
+// namespace-2:todos:1 -> { "id": "1", "text": "Buy milk", "completed": false }
 ```
 
 **Performance considerations:**
 
-- **Lower zFactor (0-2)**: Fewer storage keys, larger update payloads
-- **Higher zFactor (3-10)**: More granular storage, smaller update payloads, more storage operations
-
-### Lifecycle Hooks
-
-#### `onHydrate?: (state: TState) => void`
-
-Called after initial state hydration from HPKV.
-
-```typescript
-{
-  onHydrate: state => {
-    console.log('Hydrated with', Object.keys(state).length, 'properties');
-    // Initialize UI, trigger analytics, etc.
-  };
-}
-```
-
-#### `onConflict?: (conflicts: ConflictInfo<TState>[]) => ConflictResolution<TState>`
-
-Custom conflict resolution strategy.
-
-```typescript
-{
-  onConflict: conflicts => {
-    // Log conflicts for debugging
-    console.log('Resolving', conflicts.length, 'conflicts');
-
-    // Custom merge logic
-    const contentConflict = conflicts.find(c => c.field === 'content');
-    if (contentConflict) {
-      return {
-        strategy: 'merge',
-        mergedValues: {
-          content: `${contentConflict.remoteValue}\n---\n${contentConflict.localValue}`,
-        },
-      };
-    }
-
-    // Default: prefer remote
-    return { strategy: 'keep-remote' };
-  };
-}
-```
-
-**Available strategies:**
-
-- `keep-remote`: Use server state (default)
-- `keep-local`: Use local changes
-- `merge`: Custom merge with `mergedValues`
+- **Lower zFactor (0-2)**: Fewer keys, better for atomic state changes
+- **Higher zFactor (3+)**: More granular storage, better for collaborative editing of nested data
 
 ### Performance & Debugging
 
@@ -642,91 +513,27 @@ Controls logging verbosity.
 
 ```typescript
 {
-  logLevel: LogLevel.INFO; // NONE, ERROR, WARN, INFO, DEBUG
+  logLevel: LogLevel.INFO; // DEBUG, INFO, WARN, ERROR, NONE
 }
 ```
 
-#### `profiling?: boolean`
+#### `rateLimit?: number`
 
-Enables performance profiling.
+Limits the number of messages sent per second. Adjust this based on the rate limit of you HPKV plan. For free tier, it's 10 req/s.
 
 ```typescript
 {
-  profiling: true; // Collect detailed metrics
+  rateLimit: 10; // Max 10 messages per second
 }
-```
-
-#### `retryConfig?: RetryConfig`
-
-Customizes retry behavior for failed operations.
-
-```typescript
-interface RetryConfig {
-  maxRetries: number;
-  baseDelay: number;
-  maxDelay: number;
-  backoffFactor: number;
-}
-```
-
-Example:
-
-```typescript
-{
-  retryConfig: {
-    maxRetries: 5,
-    baseDelay: 1000,      // 1 second
-    maxDelay: 30000,      // 30 seconds
-    backoffFactor: 2      // Exponential backoff
-  }
-}
-```
-
-#### `clientConfig?: ConnectionConfig`
-
-Advanced WebSocket client configuration from `@hpkv/websocket-client`.
-
-```typescript
-{
-  clientConfig: {
-    maxReconnectAttempts: 10,
-    throttling: {
-      enabled: true,
-      rateLimit: 100        // Messages per second
-    }
-  }
-}
-```
-
-## Conflict Resolution
-
-### `ConflictInfo<TState>`
-
-Information about a single conflict.
-
-```typescript
-interface ConflictInfo<TState> {
-  field: keyof TState; // The conflicted field
-  localValue: unknown; // Value before disconnection
-  remoteValue: unknown; // Current server value
-  pendingValue: unknown; // Your pending change
-}
-```
-
-### `ConflictResolution<TState>`
-
-Resolution strategy for conflicts.
-
-```typescript
-interface ConflictResolution<TState> {
-  strategy: ConflictStrategy;
-  mergedValues?: Partial<TState>; // Required if strategy is 'merge'
-}
-
-type ConflictStrategy = 'keep-remote' | 'keep-local' | 'merge';
 ```
 
 ## Token Helper API
+
+The `TokenHelper` class is available for server-side token generation but must be imported directly:
+
+```typescript
+import { TokenHelper } from '@hpkv/zustand-multiplayer';
+```
 
 ### `TokenHelper`
 
@@ -740,7 +547,7 @@ new TokenHelper(apiKey: string, baseUrl: string)
 
 #### Methods
 
-##### `generateTokenForStore(namespace: string, subscribedKeysAndPatterns: string[]): Promise<string>`
+##### `generateTokenForStore(namespace: string, subscribedKeysAnPatterns: string[]): Promise<string>`
 
 Generates a WebSocket token for a specific namespace.
 
@@ -752,30 +559,15 @@ const token = await tokenHelper.generateTokenForStore('my-app', ['my-app:todos',
 **Parameters:**
 
 - `namespace`: The store namespace
-- `subscribedKeysAndPatterns`: Array of keys and patterns to subscribe to (supports wildcards with `*`)
+- `subscribedKeysAnPatterns`: Array of keys and patterns to subscribe to (supports wildcards with `*`)
 
 ##### `processTokenRequest(requestData: unknown): Promise<TokenResponse>`
 
-Processes a token request and returns a structured response. Accepts both string and object formats.
+Processes a token request and returns a structured response.
 
 ```typescript
 const response = await tokenHelper.processTokenRequest(req.body);
 // Returns: { namespace: 'my-app', token: 'eyJ...' }
-```
-
-##### Framework Handlers
-
-Pre-built handlers for popular frameworks:
-
-```typescript
-// Express
-app.post('/api/token', tokenHelper.createExpressHandler());
-
-// Next.js
-export default tokenHelper.createNextApiHandler();
-
-// Fastify
-fastify.post('/api/token', tokenHelper.createFastifyHandler());
 ```
 
 ### Token Interfaces
@@ -796,113 +588,20 @@ interface TokenResponse {
 }
 ```
 
-## Error Types
-
-### `MultiplayerError`
-
-Base error class for multiplayer-related errors with enhanced categorization.
-
-```typescript
-class MultiplayerError extends Error {
-  public readonly timestamp: number;
-  public readonly severity: ErrorSeverity;
-  public readonly category: ErrorCategory;
-
-  constructor(
-    message: string,
-    public readonly code: string,
-    public readonly recoverable: boolean = true,
-    public readonly context?: ErrorContext,
-    severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-    category: ErrorCategory = ErrorCategory.STATE_MANAGEMENT,
-  )
-
-  toSerializable(): Record<string, unknown>;
-}
-```
-
-### Error Severity Levels
-
-```typescript
-enum ErrorSeverity {
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high',
-  CRITICAL = 'critical',
-}
-```
-
-### Error Categories
-
-```typescript
-enum ErrorCategory {
-  AUTHENTICATION = 'authentication',
-  NETWORK = 'network',
-  STORAGE = 'storage',
-  HYDRATION = 'hydration',
-  CONFLICT_RESOLUTION = 'conflict_resolution',
-  STATE_MANAGEMENT = 'state_management',
-  CONFIGURATION = 'configuration',
-  VALIDATION = 'validation',
-}
-```
-
-### Specific Error Types
-
-#### `AuthenticationError`
-
-```typescript
-class AuthenticationError extends MultiplayerError {
-  constructor(message: string, context?: ErrorContext);
-}
-```
-
-#### `ConfigurationError`
-
-```typescript
-class ConfigurationError extends MultiplayerError {
-  constructor(message: string, context?: ErrorContext);
-}
-```
-
-#### `HydrationError`
-
-```typescript
-class HydrationError extends MultiplayerError {
-  constructor(message: string, context?: ErrorContext);
-}
-```
-
-### Error Context
-
-```typescript
-interface ErrorContext {
-  timestamp?: number;
-  operation?: string;
-  clientId?: string;
-  namespace?: string;
-  [key: string]: unknown;
-}
-```
-
 ## Performance Monitoring
 
 ### Metrics Collection
 
-Enable profiling to collect detailed metrics:
+Performance metrics are automatically collected and accessible via the store API:
 
 ```typescript
-{
-  profiling: true;
-}
+const metrics = store.multiplayer.getMetrics();
 ```
 
 ### Available Metrics
 
 ```typescript
 interface PerformanceMetrics {
-  stateChangesProcessed: number; // Total state changes handled
-  averageHydrationTime: number; // Average hydration time (ms)
   averageSyncTime: number; // Average sync operation time (ms)
 }
 ```
@@ -911,13 +610,11 @@ interface PerformanceMetrics {
 
 ```typescript
 function PerformanceMonitor() {
-  const metrics = useStore(state => state.multiplayer.getMetrics());
+  const { performanceMetrics } = useStore(state => state.multiplayer);
 
   return (
     <div>
-      <p>Changes Processed: {metrics.stateChangesProcessed}</p>
-      <p>Avg Hydration: {metrics.averageHydrationTime.toFixed(1)}ms</p>
-      <p>Avg Sync Time: {metrics.averageSyncTime.toFixed(1)}ms</p>
+      <p>Avg Sync Time: {performanceMetrics.averageSyncTime.toFixed(1)}ms</p>
     </div>
   );
 }
@@ -930,6 +627,8 @@ function PerformanceMonitor() {
 Connection states are imported from `@hpkv/websocket-client`:
 
 ```typescript
+import { ConnectionState } from '@hpkv/websocket-client';
+
 enum ConnectionState {
   DISCONNECTED = 'DISCONNECTED',
   CONNECTING = 'CONNECTING',
@@ -953,17 +652,38 @@ interface ConnectionStats {
 }
 ```
 
+### Monitoring Connection
+
+```typescript
+function ConnectionStatus() {
+  const connectionState = useStore(state => state.multiplayer.connectionState);
+  const status = useStore.multiplayer.getConnectionStatus();
+
+  return (
+    <div>
+      <div>State: {connectionState}</div>
+      {status && (
+        <div>
+          <div>Reconnect Attempts: {status.reconnectAttempts}</div>
+          <div>Pending Messages: {status.messagesPending}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
 ## Logging
 
 ### LogLevel Enum
 
 ```typescript
 enum LogLevel {
-  DEBUG = 4,
-  INFO = 3,
+  DEBUG = 0,
+  INFO = 1,
   WARN = 2,
-  ERROR = 1,
-  NONE = 0,
+  ERROR = 3,
+  NONE = 4,
 }
 ```
 
@@ -975,6 +695,18 @@ import { LogLevel } from '@hpkv/zustand-multiplayer';
 {
   logLevel: LogLevel.DEBUG; // Enable all logging
 }
+```
+
+### Custom Logger
+
+You can create a custom logger instance:
+
+```typescript
+import { createLogger, LogLevel } from '@hpkv/zustand-multiplayer';
+
+const logger = createLogger(LogLevel.INFO);
+logger.info('Application started');
+logger.error('An error occurred', error);
 ```
 
 ## Best Practices
@@ -991,20 +723,18 @@ const useStore = create<WithMultiplayer<MyState>>()(multiplayer(/* ... */));
 const useStore = create<MyState>()(multiplayer(/* ... */));
 ```
 
-### Immer-Style Updates
+### State Updates
 
-Use arrow functions for Immer-style mutations:
+Use standard Zustand patterns for state updates:
 
 ```typescript
-// ✅ Immer-style (arrow function)
-set(state => {
-  state.todos[id] = newTodo;
-});
-
-// ✅ Traditional functional update
+// ✅ Functional update
 set(state => ({
   todos: { ...state.todos, [id]: newTodo },
 }));
+
+// ✅ Direct update
+set({ count: 5 });
 ```
 
 ### Error Handling
@@ -1013,25 +743,22 @@ Wrap multiplayer operations in try-catch blocks:
 
 ```typescript
 try {
-  await store.getState().multiplayer.hydrate();
+  await store.multiplayer.reHydrate();
 } catch (error) {
-  if (error instanceof HydrationError) {
-    // Handle hydration-specific errors
-    console.error('Hydration failed:', error.message);
-  }
+  console.error('Hydration failed:', error);
 }
 ```
 
 ### Performance Optimization
 
 1. **Use selective sync** for large states to reduce bandwidth
-2. **Enable profiling** in development to track performance
+2. **Choose appropriate zFactor** based on your data structure
 3. **Monitor metrics** in production for insights
-4. **Configure retry policies** and connection settings for your use case
+4. **Set rate limits** to prevent overwhelming the server
 
 ### Security
 
 1. **Never expose API keys** in client code
 2. **Validate tokens** in your backend
-3. **Implement authentication/authrization** for token endpoints
-4. **Implement rate limiting** on token generation
+3. **Implement authentication/authorization** for token endpoints
+4. **Use HTTPS** for all API communications

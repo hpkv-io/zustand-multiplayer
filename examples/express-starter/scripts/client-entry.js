@@ -3,5 +3,5 @@ import { multiplayer } from '@hpkv/zustand-multiplayer';
 
 window.ZustandMultiplayer = {
   createStore,
-  multiplayer
+  multiplayer,
 };

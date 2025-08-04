@@ -1,42 +1,18 @@
+import { MAX_OPERATION_HISTORY } from '../utils/constants';
+
 export interface PerformanceMetrics {
-  stateChangesProcessed: number;
-  averageHydrationTime: number;
   averageSyncTime: number;
 }
 
 export class PerformanceMonitor {
-  private metrics: PerformanceMetrics = {
-    stateChangesProcessed: 0,
-    averageHydrationTime: 0,
+  private readonly metrics: PerformanceMetrics = {
     averageSyncTime: 0,
   };
-
-  private hydrationTimes: number[] = [];
-  private syncTimes: number[] = [];
-
-  constructor(private enabled: boolean) {}
-
-  recordStateChange(): void {
-    if (!this.enabled) return;
-    this.metrics.stateChangesProcessed++;
-  }
-
-  recordHydrationTime(duration: number): void {
-    if (!this.enabled) return;
-    this.hydrationTimes.push(duration);
-    if (this.hydrationTimes.length > 100) {
-      this.hydrationTimes.shift();
-    }
-    this.metrics.averageHydrationTime =
-      this.hydrationTimes.length > 0
-        ? this.hydrationTimes.reduce((sum, time) => sum + time, 0) / this.hydrationTimes.length
-        : 0;
-  }
+  private readonly syncTimes: number[] = [];
 
   recordSyncTime(duration: number): void {
-    if (!this.enabled) return;
     this.syncTimes.push(duration);
-    if (this.syncTimes.length > 100) {
+    if (this.syncTimes.length > MAX_OPERATION_HISTORY) {
       this.syncTimes.shift();
     }
     this.metrics.averageSyncTime =
@@ -47,5 +23,13 @@ export class PerformanceMonitor {
 
   getMetrics(): PerformanceMetrics {
     return { ...this.metrics };
+  }
+
+  /**
+   * Cleanup performance monitoring data
+   */
+  cleanup(): void {
+    this.syncTimes.length = 0;
+    this.metrics.averageSyncTime = 0;
   }
 }
