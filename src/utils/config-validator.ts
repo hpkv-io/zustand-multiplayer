@@ -1,6 +1,6 @@
-import { ConfigurationError } from '../types/multiplayer-types';
 import type { MultiplayerOptions } from '../types/multiplayer-types';
 import { MIN_Z_FACTOR, MAX_Z_FACTOR, DEFAULT_Z_FACTOR } from './constants';
+import { normalizeError } from '.';
 
 // ============================================================================
 // CONFIGURATION VALIDATION UTILITIES
@@ -16,26 +16,11 @@ export interface ValidationResult {
 }
 
 /**
- * Configuration validation options
- */
-export interface ValidationOptions {
-  strict?: boolean;
-  allowMissingOptional?: boolean;
-}
-
-/**
  * Validates that required authentication options are provided
  */
 export function validateAuthenticationOptions<T>(options: MultiplayerOptions<T>): void {
   if (!options.apiKey && !options.tokenGenerationUrl) {
-    throw new ConfigurationError(
-      'Either apiKey or tokenGenerationUrl must be provided for authentication',
-      {
-        apiKey: options.apiKey,
-        tokenGenerationUrl: options.tokenGenerationUrl,
-        operation: 'authentication-validation',
-      },
-    );
+    throw new Error('Either apiKey or tokenGenerationUrl must be provided for authentication');
   }
 }
 
@@ -44,29 +29,16 @@ export function validateAuthenticationOptions<T>(options: MultiplayerOptions<T>)
  */
 export function validateNamespace(namespace: string): void {
   if (!namespace || typeof namespace !== 'string') {
-    throw new ConfigurationError('Namespace must be a non-empty string', {
-      namespace,
-      operation: 'namespace-validation',
-    });
+    throw new Error('Namespace must be a non-empty string');
   }
 
   if (namespace.length < 1 || namespace.length > 100) {
-    throw new ConfigurationError('Namespace must be between 1 and 100 characters', {
-      namespace,
-      length: namespace.length,
-      operation: 'namespace-validation',
-    });
+    throw new Error('Namespace must be between 1 and 100 characters');
   }
 
   const invalidChars = /[^a-zA-Z0-9_-]/;
   if (invalidChars.test(namespace)) {
-    throw new ConfigurationError(
-      'Namespace can only contain alphanumeric characters, underscores, and hyphens',
-      {
-        namespace,
-        operation: 'namespace-validation',
-      },
-    );
+    throw new Error('Namespace can only contain alphanumeric characters, underscores, and hyphens');
   }
 }
 
@@ -75,27 +47,16 @@ export function validateNamespace(namespace: string): void {
  */
 export function validateApiBaseUrl(apiBaseUrl: string): void {
   if (!apiBaseUrl || typeof apiBaseUrl !== 'string') {
-    throw new ConfigurationError('API base URL must be a non-empty string', {
-      apiBaseUrl,
-      operation: 'api-url-validation',
-    });
+    throw new Error('API base URL must be a non-empty string');
   }
 
   try {
     const url = new URL(apiBaseUrl);
     if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new ConfigurationError('API base URL must use HTTP or HTTPS protocol', {
-        apiBaseUrl,
-        protocol: url.protocol,
-        operation: 'api-url-validation',
-      });
+      throw new Error('API base URL must use HTTP or HTTPS protocol');
     }
   } catch (error) {
-    throw new ConfigurationError('Invalid API base URL format', {
-      apiBaseUrl,
-      error: error instanceof Error ? error.message : String(error),
-      operation: 'api-url-validation',
-    });
+    throw new Error(`Invalid API base URL format : ${normalizeError(error).message}`);
   }
 }
 
@@ -108,91 +69,29 @@ export function validateZFactor(zFactor?: number): number {
   }
 
   if (typeof zFactor !== 'number' || !Number.isInteger(zFactor)) {
-    throw new ConfigurationError('Z-factor must be an integer', {
-      zFactor,
-      type: typeof zFactor,
-      operation: 'z-factor-validation',
-    });
+    throw new Error('Z-factor must be an integer');
   }
 
   if (zFactor < MIN_Z_FACTOR || zFactor > MAX_Z_FACTOR) {
-    throw new ConfigurationError(`Z-factor must be between ${MIN_Z_FACTOR} and ${MAX_Z_FACTOR}`, {
-      zFactor,
-      min: MIN_Z_FACTOR,
-      max: MAX_Z_FACTOR,
-      operation: 'z-factor-validation',
-    });
+    throw new Error(`Z-factor must be between ${MIN_Z_FACTOR} and ${MAX_Z_FACTOR}`);
   }
 
   return zFactor;
 }
 
 /**
- * Validates function arrays for subscribe/publish operations
+ * Validates the sync array option
  */
-export function validateFunctionArrays<T>(
-  publishUpdatesFor?: () => Array<keyof T>,
-  subscribeToUpdatesFor?: () => Array<keyof T>,
-): void {
-  if (publishUpdatesFor && typeof publishUpdatesFor !== 'function') {
-    throw new ConfigurationError('publishUpdatesFor must be a function', {
-      type: typeof publishUpdatesFor,
-      operation: 'function-validation',
-    });
-  }
-
-  if (subscribeToUpdatesFor && typeof subscribeToUpdatesFor !== 'function') {
-    throw new ConfigurationError('subscribeToUpdatesFor must be a function', {
-      type: typeof subscribeToUpdatesFor,
-      operation: 'function-validation',
-    });
-  }
-
-  // Validate that functions return arrays (can only be checked at runtime)
-  if (publishUpdatesFor) {
-    try {
-      const result = publishUpdatesFor();
-      if (!Array.isArray(result)) {
-        throw new ConfigurationError('publishUpdatesFor must return an array', {
-          returnType: typeof result,
-          operation: 'function-validation',
-        });
-      }
-    } catch (error) {
-      if (error instanceof ConfigurationError) throw error;
-      throw new ConfigurationError('Error executing publishUpdatesFor function', {
-        error: error instanceof Error ? error.message : String(error),
-        operation: 'function-validation',
-      });
-    }
-  }
-
-  if (subscribeToUpdatesFor) {
-    try {
-      const result = subscribeToUpdatesFor();
-      if (!Array.isArray(result)) {
-        throw new ConfigurationError('subscribeToUpdatesFor must return an array', {
-          returnType: typeof result,
-          operation: 'function-validation',
-        });
-      }
-    } catch (error) {
-      if (error instanceof ConfigurationError) throw error;
-      throw new ConfigurationError('Error executing subscribeToUpdatesFor function', {
-        error: error instanceof Error ? error.message : String(error),
-        operation: 'function-validation',
-      });
-    }
+export function validateSyncArray<T>(sync?: Array<keyof T>): void {
+  if (sync && !Array.isArray(sync)) {
+    throw new Error('sync must be an array');
   }
 }
 
 /**
  * Comprehensive validation of all multiplayer options
  */
-export function validateMultiplayerOptions<T>(
-  options: MultiplayerOptions<T>,
-  validationOptions: ValidationOptions = {},
-): ValidationResult {
+export function validateMultiplayerOptions<T>(options: MultiplayerOptions<T>): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -200,20 +99,10 @@ export function validateMultiplayerOptions<T>(
     validateAuthenticationOptions(options);
     validateNamespace(options.namespace);
     validateApiBaseUrl(options.apiBaseUrl);
-    validateFunctionArrays(options.publishUpdatesFor, options.subscribeToUpdatesFor);
+    validateSyncArray(options.sync);
     options.zFactor = validateZFactor(options.zFactor);
-
-    if (options.profiling === true && !validationOptions.strict) {
-      warnings.push('Profiling is enabled, which may impact performance in production');
-    }
   } catch (error) {
-    if (error instanceof ConfigurationError) {
-      errors.push(error.message);
-    } else {
-      errors.push(
-        `Unexpected validation error: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    errors.push(error instanceof Error ? error.message : String(error));
   }
 
   return {
@@ -226,18 +115,11 @@ export function validateMultiplayerOptions<T>(
 /**
  * Validates multiplayer options, throwing on validation failure
  */
-export function validateOptions<T>(
-  options: MultiplayerOptions<T>,
-  validationOptions: ValidationOptions = {},
-): MultiplayerOptions<T> {
-  const result = validateMultiplayerOptions(options, validationOptions);
+export function validateOptions<T>(options: MultiplayerOptions<T>): MultiplayerOptions<T> {
+  const result = validateMultiplayerOptions(options);
 
   if (!result.isValid) {
-    throw new ConfigurationError(`Configuration validation failed: ${result.errors.join(', ')}`, {
-      errors: result.errors,
-      warnings: result.warnings,
-      operation: 'options-validation',
-    });
+    throw new Error(`Configuration validation failed: ${result.errors.join(', ')}`);
   }
 
   if (result.warnings.length > 0 && typeof console !== 'undefined') {

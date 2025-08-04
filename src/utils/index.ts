@@ -3,19 +3,10 @@
 // ============================================================================
 
 /**
- * Generates a unique identifier with timestamp and random component
- * @returns A unique string identifier
- */
-export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
  * Generates a cryptographically secure unique client identifier
  * @returns A unique client identifier string
  */
 export function generateClientId(): string {
-  // Use crypto.getRandomValues for better security if available
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     const array = new Uint8Array(16);
     crypto.getRandomValues(array);
@@ -25,10 +16,6 @@ export function generateClientId(): string {
     return `client_${Date.now()}_${randomString}`;
   }
 
-  // Fallback to Math.random with warning
-  console.warn(
-    'Using less secure Math.random for client ID generation. Consider using a secure environment.',
-  );
   return `client_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 }
 
@@ -39,14 +26,6 @@ export function generateClientId(): string {
  */
 export function normalizeError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
-}
-
-/**
- * Gets the current timestamp in milliseconds
- * @returns Current timestamp
- */
-export function getCurrentTimestamp(): number {
-  return Date.now();
 }
 
 /**
@@ -87,26 +66,30 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 }
 
 /**
- * Type guard to check if a value is a primitive
+ * Sets a nested value in an object using a path array
+ * @param obj The object to set the value in
+ * @param segments Array of path segments
+ * @param value The value to set
  */
-export function isPrimitive(value: unknown): value is string | number | boolean | null | undefined {
-  return (
-    value === null ||
-    value === undefined ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  );
-}
+export function setNestedValue(
+  obj: Record<string, unknown>,
+  segments: string[],
+  value: unknown,
+): void {
+  if (segments.length === 0) return;
 
-// Re-export validation utilities
-export {
-  validateOptions,
-  validateMultiplayerOptions,
-  validateAuthenticationOptions,
-  validateNamespace,
-  validateApiBaseUrl,
-  validateZFactor,
-  type ValidationResult,
-  type ValidationOptions,
-} from './config-validator';
+  let current: Record<string, unknown> = obj;
+
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i];
+
+    if (!current[segment] || !isPlainObject(current[segment])) {
+      current[segment] = {};
+    }
+
+    current = current[segment] as Record<string, unknown>;
+  }
+
+  const lastSegment = segments[segments.length - 1];
+  current[lastSegment] = value;
+}

@@ -4,9 +4,8 @@ import { LogLevel } from '../../src/monitoring/logger';
 import { multiplayer } from '../../src/multiplayer';
 import type {
   MultiplayerOptions,
-  MultiplayerState,
+  MultiplayerStoreApi,
   WithMultiplayer,
-  WithMultiplayerMiddleware,
 } from '../../src/types/multiplayer-types';
 import { createUniqueStoreName } from './test-utils';
 
@@ -28,7 +27,7 @@ export class StoreCreator {
   createStore<T>(
     config: StateCreator<T, [], []>,
     options?: Partial<MultiplayerOptions<T>> | MultiplayerOptions<T>,
-  ): UseBoundStore<WithMultiplayerMiddleware<StoreApi<WithMultiplayer<T>>, WithMultiplayer<T>>> {
+  ): UseBoundStore<MultiplayerStoreApi<WithMultiplayer<T>>> {
     const namespace = createUniqueStoreName('test-namespace');
     const opts = { namespace, ...defaultMultiplayerOptions, ...options } as MultiplayerOptions<
       Omit<T, 'multiplayer'>
@@ -38,12 +37,11 @@ export class StoreCreator {
     return store;
   }
 
-  async cleanupStore<T>(store: UseBoundStore<StoreApi<T & { multiplayer: MultiplayerState }>>) {
-    const state = store.getState();
+  async cleanupStore<T>(store: UseBoundStore<MultiplayerStoreApi<WithMultiplayer<T>>>) {
     try {
-      await state.multiplayer.clearStorage();
-      await state.multiplayer.disconnect();
-      await state.multiplayer.destroy();
+      await store.multiplayer.clearStorage();
+      await store.multiplayer.disconnect();
+      await store.multiplayer.destroy();
     } catch (error) {
       console.error('Error cleaning up store:', error);
     }
@@ -51,7 +49,9 @@ export class StoreCreator {
 
   async cleanupAllStores() {
     for (const store of this.storeRegistry.values()) {
-      await this.cleanupStore(store as UseBoundStore<StoreApi<{ multiplayer: MultiplayerState }>>);
+      await this.cleanupStore(
+        store as UseBoundStore<MultiplayerStoreApi<WithMultiplayer<unknown>>>,
+      );
     }
     this.storeRegistry.clear();
   }

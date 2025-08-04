@@ -52,22 +52,6 @@ describe('StorageKeyManager Unit Tests', () => {
     expect(key2).toBe('app-7:settings');
   });
 
-  it('should handle zFactor in parsing and prefix operations', () => {
-    const namespace = 'test';
-    const manager = new StorageKeyManager(namespace, 4);
-
-    const storageKey = 'test-4:user:name';
-    const parsed = manager.parseStorageKey(storageKey);
-
-    expect(parsed.segments).toEqual(['user', 'name']);
-
-    const withoutPrefix = manager.getKeyWithoutPrefix(storageKey);
-    expect(withoutPrefix).toBe('user:name');
-
-    const withPrefix = manager.ensureNamespacePrefix('user:email');
-    expect(withPrefix).toBe('test-4:user:email');
-  });
-
   it('should handle zFactor 0 correctly', () => {
     const namespace = 'store';
     const manager = new StorageKeyManager(namespace, 0);

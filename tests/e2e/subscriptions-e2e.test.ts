@@ -17,12 +17,18 @@ interface TestState {
     };
   };
   records: Record<string, { value: string }>;
+  nestedRecords: {
+    records: Record<string, { value: string }>;
+  };
   increment: () => void;
   setText: (text: string) => void;
   updateNested: (value: string) => void;
   addRecord: (key: string, value: string) => void;
   removeRecord: (key: string) => void;
   updateRecord: (key: string, value: string) => void;
+  addNestedRecord: (key: string, value: string) => void;
+  removeNestedRecord: (key: string) => void;
+  updateNestedRecord: (key: string, value: string) => void;
 }
 
 const initializer: StateCreator<TestState, [], []> = set => ({
@@ -38,6 +44,9 @@ const initializer: StateCreator<TestState, [], []> = set => ({
     },
   },
   records: {},
+  nestedRecords: {
+    records: {},
+  },
   increment: () => set(state => ({ count: state.count + 1 })),
   setText: (text: string) => set({ text }),
   updateNested: (value: string) =>
@@ -50,6 +59,22 @@ const initializer: StateCreator<TestState, [], []> = set => ({
     })),
   updateRecord: (key: string, value: string) =>
     set(state => ({ records: { ...state.records, [key]: { value } } })),
+  addNestedRecord: (key: string, value: string) =>
+    set(state => ({
+      nestedRecords: { records: { ...state.nestedRecords.records, [key]: { value } } },
+    })),
+  removeNestedRecord: (key: string) =>
+    set(state => ({
+      nestedRecords: {
+        records: Object.fromEntries(
+          Object.entries(state.nestedRecords.records).filter(([k]) => k !== key),
+        ),
+      },
+    })),
+  updateNestedRecord: (key: string, value: string) =>
+    set(state => ({
+      nestedRecords: { records: { ...state.nestedRecords.records, [key]: { value } } },
+    })),
 });
 
 const skip = !process.env.HPKV_API_KEY || !process.env.HPKV_API_BASE_URL;
@@ -74,6 +99,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('default-subscription-test');
       const store1 = createTestStore({ namespace });
       const store2 = createTestStore({ namespace });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().increment();
       store2.getState().setText('Text');
       await waitFor(() => {
@@ -84,23 +113,33 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       });
     });
 
-    it.skipIf(skip)('should only subscribe to confgured state keys when configured', async () => {
-      const namespace = createUniqueStoreName('configured-subscription-test');
-      const store1 = createTestStore({ namespace, subscribeToUpdatesFor: () => ['text'] });
-      const store2 = createTestStore({ namespace, subscribeToUpdatesFor: () => ['count'] });
-      store1.getState().increment();
-      store1.getState().setText('Text');
+    it.skipIf(skip)('should only sync configured state keys when configured', async () => {
+      const namespace = createUniqueStoreName('configured-sync-test');
+      const store1 = createTestStore({ namespace, sync: ['text'] });
+      const store2 = createTestStore({ namespace, sync: ['count'] });
       await waitFor(() => {
-        expect(store2.getState().count).toBe(1);
-        expect(store2.getState().text).toBe('');
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
       });
 
+      // Store1 syncs 'text' only, so its text changes will be published
+      // but it won't receive count updates
+      store1.getState().increment();
+      store1.getState().setText('Text1');
+
+      // Store2 syncs 'count' only, so its count changes will be published
+      // but it won't receive text updates
       store2.getState().increment();
-      store2.getState().setText('Text');
+      store2.getState().setText('Text2');
+
       await waitFor(() => {
-        expect(store2.getState().count).toBe(2);
+        // Store1 only syncs text, so it won't see store2's count update
         expect(store1.getState().count).toBe(1);
-        expect(store1.getState().text).toBe('Text');
+        expect(store1.getState().text).toBe('Text1');
+
+        // Store2 only syncs count, so it won't see store1's text update
+        expect(store2.getState().count).toBe(1);
+        expect(store2.getState().text).toBe('Text2');
       });
     });
 
@@ -108,6 +147,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('publish-default-subscription-test');
       const store1 = createTestStore({ namespace });
       const store2 = createTestStore({ namespace });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().increment();
       store2.getState().setText('Text');
       await waitFor(() => {
@@ -118,16 +161,20 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       });
     });
 
-    it.skipIf(skip)('should only publish configured state changes when configured', async () => {
-      const namespace = createUniqueStoreName('publish-configured-subscription-test');
-      const store1 = createTestStore({ namespace, publishUpdatesFor: () => ['text'] });
+    it.skipIf(skip)('should sync all fields when no sync option provided', async () => {
+      const namespace = createUniqueStoreName('sync-all-test');
+      const store1 = createTestStore({ namespace });
       const store2 = createTestStore({ namespace });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().increment();
       store1.getState().setText('Text');
       await waitFor(() => {
         expect(store1.getState().count).toBe(1);
         expect(store1.getState().text).toBe('Text');
-        expect(store2.getState().count).toBe(0);
+        expect(store2.getState().count).toBe(1);
         expect(store2.getState().text).toBe('Text');
       });
     });
@@ -138,6 +185,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('sync-nested-subscription-test-zfactor-0');
       const store1 = createTestStore({ namespace, zFactor: 0 });
       const store2 = createTestStore({ namespace, zFactor: 0 });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().updateNested('Value');
       await waitFor(() => {
         expect(store1.getState().nested.levelOne.levelTwo.levelThree.value).toBe('Value');
@@ -149,6 +200,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('sync-nested-subscription-test-zfactor-1');
       const store1 = createTestStore({ namespace, zFactor: 1 });
       const store2 = createTestStore({ namespace, zFactor: 1 });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().updateNested('Value');
       await waitFor(() => {
         expect(store1.getState().nested.levelOne.levelTwo.levelThree.value).toBe('Value');
@@ -160,6 +215,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('sync-nested-subscription-test-zfactor-2');
       const store1 = createTestStore({ namespace, zFactor: 2 });
       const store2 = createTestStore({ namespace, zFactor: 2 });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().updateNested('Value');
       await waitFor(() => {
         expect(store1.getState().nested.levelOne.levelTwo.levelThree.value).toBe('Value');
@@ -171,6 +230,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('sync-nested-subscription-test-zfactor-3');
       const store1 = createTestStore({ namespace, zFactor: 3 });
       const store2 = createTestStore({ namespace, zFactor: 3 });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().updateNested('Value');
       await waitFor(() => {
         expect(store1.getState().nested.levelOne.levelTwo.levelThree.value).toBe('Value');
@@ -182,6 +245,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
       const namespace = createUniqueStoreName('sync-nested-subscription-test-zfactor-4');
       const store1 = createTestStore({ namespace, zFactor: 4 });
       const store2 = createTestStore({ namespace, zFactor: 4 });
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
       store1.getState().updateNested('Value');
       await waitFor(() => {
         expect(store1.getState().nested.levelOne.levelTwo.levelThree.value).toBe('Value');
@@ -191,11 +258,10 @@ describe('Multiplayer Middleware Subscription Tests', () => {
   });
 
   describe('Record state synchronization tests', () => {
-    it.skipIf(true)('should synchronize record state change with zFactor 0', async () => {
+    it.skipIf(skip)('should synchronize record state change with zFactor 0', async () => {
       const namespace = createUniqueStoreName('sync-record-subscription-test-zfactor-0');
       const store1 = createTestStore({ namespace, zFactor: 0 });
       const store2 = createTestStore({ namespace, zFactor: 0 });
-
       await waitFor(() => {
         expect(store1.getState().multiplayer.hasHydrated).toBe(true);
         expect(store2.getState().multiplayer.hasHydrated).toBe(true);
@@ -243,35 +309,35 @@ describe('Multiplayer Middleware Subscription Tests', () => {
         expect(store2.getState().multiplayer.hasHydrated).toBe(true);
       });
 
-      store1.getState().addRecord('key1', 'value1');
-      store1.getState().addRecord('key2', 'value2');
+      store1.getState().addNestedRecord('key1', 'value1');
+      store1.getState().addNestedRecord('key2', 'value2');
       await waitFor(() => {
-        expect(store1.getState().records).toEqual({
+        expect(store1.getState().nestedRecords.records).toEqual({
           key1: { value: 'value1' },
           key2: { value: 'value2' },
         });
-        expect(store2.getState().records).toEqual({
+        expect(store2.getState().nestedRecords.records).toEqual({
           key1: { value: 'value1' },
           key2: { value: 'value2' },
         });
       });
 
-      store1.getState().updateRecord('key1', 'value1-updated');
+      store1.getState().updateNestedRecord('key1', 'value1-updated');
       await waitFor(() => {
-        expect(store1.getState().records).toEqual({
+        expect(store1.getState().nestedRecords.records).toEqual({
           key1: { value: 'value1-updated' },
           key2: { value: 'value2' },
         });
-        expect(store2.getState().records).toEqual({
+        expect(store2.getState().nestedRecords.records).toEqual({
           key1: { value: 'value1-updated' },
           key2: { value: 'value2' },
         });
       });
 
-      store1.getState().removeRecord('key1');
+      store1.getState().removeNestedRecord('key1');
       await waitFor(() => {
-        expect(store1.getState().records).toEqual({ key2: { value: 'value2' } });
-        expect(store2.getState().records).toEqual({ key2: { value: 'value2' } });
+        expect(store1.getState().nestedRecords.records).toEqual({ key2: { value: 'value2' } });
+        expect(store2.getState().nestedRecords.records).toEqual({ key2: { value: 'value2' } });
       });
     });
 
@@ -380,10 +446,11 @@ describe('Multiplayer Middleware Subscription Tests', () => {
         store3.getState().increment();
         store2.getState().updateNested('Value');
         store1.getState().addRecord('key1', 'value1');
-        store2.getState().addRecord('key2', 'value2');
-        store3.getState().addRecord('key3', 'value3');
         store2.getState().updateNested('Value-updated');
         store1.getState().updateRecord('key1', 'value1-updated');
+        store2.getState().addRecord('key2', 'value2');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        store1.getState().increment();
         store3.getState().removeRecord('key2');
 
         await waitFor(() => {

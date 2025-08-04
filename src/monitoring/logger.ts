@@ -1,4 +1,4 @@
-import { getCurrentTimestamp } from '../utils';
+// Logger implementation
 
 export enum LogLevel {
   DEBUG = 0,
@@ -38,25 +38,19 @@ export class Logger {
 
   debug(message: string, context: Partial<LogContext> = {}): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      console.debug(
-        this.formatMessage('DEBUG', message, { timestamp: getCurrentTimestamp(), ...context }),
-      );
+      console.debug(this.formatMessage('DEBUG', message, { timestamp: Date.now(), ...context }));
     }
   }
 
   info(message: string, context: Partial<LogContext> = {}): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      console.info(
-        this.formatMessage('INFO', message, { timestamp: getCurrentTimestamp(), ...context }),
-      );
+      console.info(this.formatMessage('INFO', message, { timestamp: Date.now(), ...context }));
     }
   }
 
   warn(message: string, context: Partial<LogContext> = {}): void {
     if (this.shouldLog(LogLevel.WARN)) {
-      console.warn(
-        this.formatMessage('WARN', message, { timestamp: getCurrentTimestamp(), ...context }),
-      );
+      console.warn(this.formatMessage('WARN', message, { timestamp: Date.now(), ...context }));
     }
   }
 
@@ -64,7 +58,7 @@ export class Logger {
     if (this.shouldLog(LogLevel.ERROR)) {
       const errorMessage = error ? `${message}: ${error.message}` : message;
       console.error(
-        this.formatMessage('ERROR', errorMessage, { timestamp: getCurrentTimestamp(), ...context }),
+        this.formatMessage('ERROR', errorMessage, { timestamp: Date.now(), ...context }),
       );
       if (error?.stack) {
         console.error(error.stack);

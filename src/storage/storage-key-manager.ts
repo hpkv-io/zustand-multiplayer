@@ -1,6 +1,10 @@
-import type { StatePath } from '../core/state-manager';
-import { createPath } from '../core/state-manager';
-import { getCacheManager } from '../utils/cache-manager';
+import { getCacheManager } from '../utils/cache';
+
+export interface StatePath {
+  segments: string[];
+  depth: number;
+  isNested: boolean;
+}
 
 /**
  * Generic storage item interface
@@ -32,10 +36,7 @@ export class StorageKeyManager {
   private readonly cacheManager = getCacheManager();
   private readonly namespacedPrefix: string;
 
-  constructor(
-    private readonly namespace: string,
-    private readonly zFactor?: number,
-  ) {
+  constructor(namespace: string, zFactor?: number) {
     this.namespacedPrefix = zFactor !== undefined ? `${namespace}-${zFactor}` : namespace;
   }
 
@@ -73,10 +74,13 @@ export class StorageKeyManager {
       keyToParse = storageKey.substring(prefix.length);
     }
 
-    const path = keyToParse.split(':');
-    const statePath = createPath(path);
+    const segments = keyToParse.split(':');
 
-    return statePath;
+    return {
+      segments,
+      depth: segments.length,
+      isNested: segments.length > 1,
+    };
   }
 
   /**
@@ -99,57 +103,6 @@ export class StorageKeyManager {
       return fullKey.substring(prefix.length);
     }
     return fullKey;
-  }
-
-  /**
-   * Checks if a logical key is allowed to be published based on published keys patterns
-   * @param logicalKey The key to check (without namespace)
-   * @param publishedKeys Array of allowed key patterns
-   * @returns True if the key is allowed to be published
-   */
-  isKeyAllowedToPublish(logicalKey: string, publishedKeys: string[]): boolean {
-    return publishedKeys.some(
-      publishedKey => logicalKey.startsWith(`${publishedKey}:`) || logicalKey === publishedKey,
-    );
-  }
-
-  /**
-   * Extracts the logical key from a storage key (removing namespace if present)
-   * @param key The key that may or may not have namespace prefix
-   * @returns The logical key without namespace
-   */
-  extractLogicalKey(key: string): string {
-    if (key.startsWith(`${this.namespacedPrefix}:`)) {
-      return this.getKeyWithoutPrefix(key);
-    }
-    return key;
-  }
-
-  /**
-   * Ensures a key has the namespace prefix (adds it if not present)
-   * @param key The key to ensure has namespace
-   * @returns Key with namespace prefix
-   */
-  ensureNamespacePrefix(key: string): string {
-    if (key.startsWith(`${this.namespacedPrefix}:`)) {
-      return key;
-    }
-    return this.getFullKey(key);
-  }
-
-  /**
-   * Filters items based on published keys permissions
-   * @param items Array of items with key and value
-   * @param publishedKeys Array of allowed key patterns
-   * @returns Filtered items that match published keys
-   */
-  filterItemsByPublishedKeys<T extends StorageItem>(items: T[], publishedKeys: string[]): T[] {
-    return items.filter(item => {
-      const keyParts = item.key.split(':');
-      const rootKey = keyParts[0];
-
-      return publishedKeys.includes(rootKey) || publishedKeys.includes(item.key);
-    });
   }
 
   /**

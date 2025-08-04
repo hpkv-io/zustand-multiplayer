@@ -1,22 +1,15 @@
 import { ConnectionState } from '@hpkv/websocket-client';
 import type { StateCreator, StoreMutatorIdentifier, StoreApi } from 'zustand/vanilla';
-import { MultiplayerOrchestrator } from './core/multiplayer-orchestrator';
-import { ServiceFactory } from './core/service-factory';
-import { detectStateChanges, detectStateDeletions } from './core/state-manager';
-import type { Logger } from './monitoring/logger';
+import { Orchestrator } from './core/orchestrator';
 import { createLogger, LogLevel } from './monitoring/logger';
-import type { RetryConfig } from './network/retry';
-import { createDefaultRetryConfig } from './network/retry';
+import { PerformanceMonitor } from './monitoring/profiler';
 import type { HPKVStorageOptions } from './storage/hpkv-storage';
-import { createHPKVStorage } from './storage/hpkv-storage';
-import {
-  type WithMultiplayer,
-  type MultiplayerOptions,
-  type MultiplayerState,
-  type PathExtractable,
-  MultiplayerError,
-  ErrorSeverity,
-  ErrorCategory,
+import { HPKVStorage } from './storage/hpkv-storage';
+import type {
+  MultiplayerStoreApi,
+  WithMultiplayer,
+  MultiplayerOptions,
+  MultiplayerState,
 } from './types/multiplayer-types';
 import { validateOptions } from './utils/config-validator';
 import { DEFAULT_Z_FACTOR, MAX_Z_FACTOR, MIN_Z_FACTOR } from './utils/constants';
@@ -61,11 +54,8 @@ function normalizeOptions<T>(
   options: MultiplayerOptions<T>,
   nonFunctionKeys: Array<keyof T>,
 ): MultiplayerOptions<T> & {
-  subscribeToUpdatesFor: () => Array<keyof T>;
-  publishUpdatesFor: () => Array<keyof T>;
+  sync: Array<keyof T>;
   logLevel: LogLevel;
-  retryConfig: RetryConfig;
-  profiling: boolean;
   zFactor: number;
 } {
   const zFactor = Math.min(
@@ -74,12 +64,8 @@ function normalizeOptions<T>(
   );
 
   return {
-    subscribeToUpdatesFor: () => nonFunctionKeys,
-    publishUpdatesFor: () => nonFunctionKeys,
-    onConflict: () => ({ strategy: 'keep-remote' }),
+    sync: options.sync ?? nonFunctionKeys,
     logLevel: LogLevel.INFO,
-    retryConfig: createDefaultRetryConfig(),
-    profiling: false,
     ...options,
     zFactor,
   };
@@ -88,10 +74,10 @@ function normalizeOptions<T>(
 /**
  * Creates path patterns for subscription
  */
-function createPathPatterns<T>(subscribedFields: Array<keyof T>): string[] {
+function createPathPatterns<T>(syncFields: Array<keyof T>): string[] {
   const pathPatterns = new Set<string>();
 
-  subscribedFields.forEach(key => {
+  syncFields.forEach(key => {
     const keyStr = String(key);
     pathPatterns.add(keyStr);
     pathPatterns.add(`${keyStr}:*`);
@@ -110,47 +96,18 @@ function extractNonFunctionKeys<T>(initialState: Record<string, unknown>): Array
 }
 
 /**
- * Sets up window cleanup handlers and returns a cleanup function
- */
-function setupWindowCleanup<T>(orchestrator: MultiplayerOrchestrator<T>): () => void {
-  if (typeof window !== 'undefined') {
-    const cleanup = () => {
-      void orchestrator.destroy();
-    };
-    window.addEventListener('beforeunload', cleanup);
-
-    return () => {
-      window.removeEventListener('beforeunload', cleanup);
-    };
-  }
-
-  return () => {};
-}
-
-/**
  * Performs async initialization of the orchestrator
  */
 async function initializeOrchestrator<T>(
-  orchestrator: MultiplayerOrchestrator<T>,
-  logger: Logger,
+  orchestrator: Orchestrator<T>,
+  logger: ReturnType<typeof createLogger>,
 ): Promise<void> {
   try {
     await orchestrator.connect();
     await orchestrator.hydrate();
   } catch (error) {
-    const normalizedError = error instanceof Error ? error : new Error(String(error));
-    const initializationError = new MultiplayerError(
-      'Store initialization failed',
-      'INITIALIZATION_ERROR',
-      true,
-      {
-        operation: 'store-initialization',
-        originalError: normalizedError.message,
-      },
-      ErrorSeverity.HIGH,
-      ErrorCategory.STATE_MANAGEMENT,
-    );
-    logger.error('Store initialization failed', initializationError, {
+    // Log error and continue - store still works in offline mode
+    logger.error('Store initialization failed', error as Error, {
       operation: 'store-initialization',
     });
   }
@@ -171,27 +128,23 @@ const multiplayerImpl: MultiplayerImpl = (config, options) => {
   return (set, get, api) => {
     const originalSet = set;
     // eslint-disable-next-line prefer-const
-    let orchestrator: MultiplayerOrchestrator<T>;
+    let orchestrator: Orchestrator<T>;
 
     /**
      * Multiplayer setState wrapper for synchronization
      */
     const multiplayerSet: typeof set = (partial, replace) => {
-      if (typeof partial === 'function') {
-        const currentState = get();
-        const nextState = partial(currentState);
+      void orchestrator.handleLocalStateChange(partial, replace);
+    };
 
-        const changes = detectStateChanges(currentState, nextState);
-        const deletions = detectStateDeletions(
-          currentState as unknown as PathExtractable,
-          nextState as PathExtractable,
-          normalizedOptions.zFactor,
-        );
-
-        orchestrator.handleStateChangeRequest({ changes, deletions }, replace);
-      } else {
-        orchestrator.handleStateChangeRequest(partial, replace);
-      }
+    (api as StoreApi<T> & MultiplayerStoreApi<T>).multiplayer = {
+      reHydrate: () => orchestrator.hydrate(),
+      clearStorage: () => orchestrator.clearStorage(),
+      disconnect: () => orchestrator.disconnect(),
+      connect: () => orchestrator.connect(),
+      destroy: () => orchestrator.destroy(),
+      getConnectionStatus: () => orchestrator.getConnectionStatus(),
+      getMetrics: () => orchestrator.getMetrics(),
     };
 
     api.setState = multiplayerSet;
@@ -201,57 +154,41 @@ const multiplayerImpl: MultiplayerImpl = (config, options) => {
     const nonFunctionKeys = extractNonFunctionKeys<T>(initialState);
     const normalizedOptions = normalizeOptions(validatedOptions, nonFunctionKeys);
     const logger = createLogger(normalizedOptions.logLevel);
-    const subscribedFields = normalizedOptions.subscribeToUpdatesFor();
-    const subscribedKeysArray = createPathPatterns(subscribedFields);
-    const publishedKeysArray = normalizedOptions.publishUpdatesFor().map(key => String(key));
+    const syncFields = normalizedOptions.sync;
+    const subscribedKeysArray = createPathPatterns(syncFields);
 
     const hpkvStorageOptions: HPKVStorageOptions = {
       namespace: normalizedOptions.namespace,
       apiBaseUrl: normalizedOptions.apiBaseUrl,
       apiKey: normalizedOptions.apiKey,
       tokenGenerationUrl: normalizedOptions.tokenGenerationUrl,
-      clientConfig: normalizedOptions.clientConfig,
-      retryConfig: normalizedOptions.retryConfig,
+      rateLimit: normalizedOptions.rateLimit,
       zFactor: normalizedOptions.zFactor,
     };
 
-    const client = createHPKVStorage(
+    const performanceMonitor = new PerformanceMonitor();
+    const client = new HPKVStorage(
       hpkvStorageOptions,
       subscribedKeysArray,
-      publishedKeysArray,
       logger,
+      performanceMonitor,
     );
 
-    const originalApi: StoreApi<T> = {
-      ...api,
-      setState: originalSet,
-    };
-
-    const services = ServiceFactory.createOrchestratorServices(client, normalizedOptions);
-
-    orchestrator = new MultiplayerOrchestrator(
+    orchestrator = new Orchestrator(
       client,
       normalizedOptions,
-      originalApi,
-      baseState,
-      services,
+      { ...api, setState: originalSet },
+      performanceMonitor,
     );
 
     const multiplayerState: MultiplayerState = {
       connectionState:
         client?.getConnectionStatus()?.connectionState ?? ConnectionState.DISCONNECTED,
       hasHydrated: false,
-      hydrate: () => orchestrator.hydrate(),
-      clearStorage: () => orchestrator.clearStorage(),
-      disconnect: () => orchestrator.disconnect(),
-      connect: () => orchestrator.connect(),
-      destroy: () => orchestrator.destroy(),
-      getConnectionStatus: () => orchestrator.getConnectionStatus(),
-      getMetrics: () => orchestrator.getMetrics(),
+      performanceMetrics: orchestrator.getMetrics(),
     };
 
     void initializeOrchestrator(orchestrator, logger);
-    setupWindowCleanup(orchestrator);
 
     return {
       ...baseState,

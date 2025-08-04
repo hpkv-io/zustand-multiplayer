@@ -78,7 +78,6 @@ function createTestStore(
   options?: Partial<MultiplayerOptions<TestState>> | MultiplayerOptions<TestState>,
 ) {
   return storeCreator.createStore<TestState>(initializer, {
-    profiling: true,
     ...options,
   });
 }

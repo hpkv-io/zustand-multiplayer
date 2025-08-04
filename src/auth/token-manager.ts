@@ -1,9 +1,8 @@
 import type { Logger } from '../monitoring/logger';
-import type { RetryManager } from '../network/retry';
 import type { StorageKeyManager } from '../storage/storage-key-manager';
-import { ConfigurationError, TokenGenerationError } from '../types/multiplayer-types';
-import { getCurrentTimestamp, clearTimeoutSafely, normalizeError } from '../utils';
+import { clearTimeoutSafely } from '../utils';
 import { TOKEN_EXPIRY_TIME, TOKEN_REFRESH_BUFFER } from '../utils/constants';
+import type { RetryManager } from '../utils/retry';
 import type { TokenResponse } from './token-helper';
 import { TokenHelper } from './token-helper';
 
@@ -45,7 +44,7 @@ export class SecureTokenCache {
   }
 
   isValid(): boolean {
-    return this.tokenData !== null && getCurrentTimestamp() < this.tokenData.expiresAt;
+    return this.tokenData !== null && Date.now() < this.tokenData.expiresAt;
   }
 
   setRefreshing(refreshing: boolean): void {
@@ -126,28 +125,21 @@ export class TokenManager {
     } else if (this.options.tokenGenerationUrl) {
       token = await this.fetchToken();
     } else {
-      throw new ConfigurationError('either apiKey or tokenGenerationUrl are required');
+      throw new Error('either apiKey or tokenGenerationUrl are required');
     }
 
     // Cache token with configured expiry time
-    const expiresAt = getCurrentTimestamp() + TOKEN_EXPIRY_TIME;
+    const expiresAt = Date.now() + TOKEN_EXPIRY_TIME;
     this.secureTokenCache.set(token, expiresAt);
 
     // Schedule refresh with configured buffer time before expiry
     const refreshAt = expiresAt - TOKEN_REFRESH_BUFFER;
-    const refreshDelay = refreshAt - getCurrentTimestamp();
+    const refreshDelay = refreshAt - Date.now();
 
     if (refreshDelay > 0) {
       this.tokenRefreshTimer = setTimeout(() => {
-        this.refreshToken().catch(error => {
-          this.options.logger.error(
-            'Failed to refresh token automatically',
-            normalizeError(error),
-            {
-              operation: 'token-refresh',
-              clientId: this.options.clientId,
-            },
-          );
+        this.refreshToken().catch(() => {
+          // Ignore refresh errors
         });
       }, refreshDelay);
     }
@@ -164,16 +156,8 @@ export class TokenManager {
       return;
     }
 
-    try {
-      // Call the refresh callback if provided
-      if (this.onTokenRefresh) {
-        await this.onTokenRefresh();
-      }
-    } catch (error) {
-      this.options.logger.error('Failed to refresh token and reconnect', normalizeError(error), {
-        operation: 'token-refresh',
-        clientId: this.options.clientId,
-      });
+    if (this.onTokenRefresh) {
+      await this.onTokenRefresh();
     }
   }
 
@@ -201,9 +185,7 @@ export class TokenManager {
         }),
       });
       if (!response.ok) {
-        throw new TokenGenerationError(
-          `Failed to get token: ${response.status} ${response.statusText}`,
-        );
+        throw new Error(`Failed to get token: ${response.status} ${response.statusText}`);
       }
       const data = (await response.json()) as TokenResponse;
       return data.token;

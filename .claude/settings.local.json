@@ -25,7 +25,10 @@
       "Bash(npm pack:*)",
       "Bash(cp:*)",
       "WebFetch(domain:www.npmjs.com)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(npm run format:*)",
+      "Bash(npm run fix:*)",
+      "Bash(npx vitest run:*)"
     ],
     "deny": []
   }

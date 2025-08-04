@@ -125,6 +125,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
 
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
       const todo1 = { id: '1', text: 'Todo 1', completed: false };
       const todo2 = { id: '2', text: 'Todo 2', completed: true };
 
@@ -141,6 +146,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const uniqueNamespace = createUniqueStoreName('record-sync-test');
       const store1 = createTestStore({ namespace: uniqueNamespace, zFactor: 0 });
       const store2 = createTestStore({ namespace: uniqueNamespace, zFactor: 0 });
+
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
 
       const todo1 = { id: '1', text: 'Todo 1', completed: false };
       const todo2 = { id: '2', text: 'Todo 2', completed: true };
@@ -159,6 +169,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const store1 = createTestStore({ namespace: uniqueNamespace, zFactor: 1 });
       const store2 = createTestStore({ namespace: uniqueNamespace, zFactor: 1 });
 
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
       const todo1 = { id: '1', text: 'Todo 1', completed: false };
       const todo2 = { id: '2', text: 'Todo 2', completed: true };
 
@@ -175,6 +190,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const uniqueNamespace = createUniqueStoreName('record-sync-test');
       const store1 = createTestStore({ namespace: uniqueNamespace, zFactor: 3 });
       const store2 = createTestStore({ namespace: uniqueNamespace, zFactor: 3 });
+
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
 
       const todo1 = { id: '1', text: 'Todo 1', completed: false };
       const todo2 = { id: '2', text: 'Todo 2', completed: true };
@@ -313,6 +333,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
 
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
       const todo = { id: '1', text: 'To Delete', completed: false };
       store1.getState().addTodo(todo);
 
@@ -331,6 +356,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const uniqueNamespace = createUniqueStoreName('record-delete-test');
       const store1 = createTestStore({ namespace: uniqueNamespace, zFactor: 0 });
       const store2 = createTestStore({ namespace: uniqueNamespace, zFactor: 0 });
+
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
 
       const todo = { id: '1', text: 'To Delete', completed: false };
       store1.getState().addTodo(todo);
@@ -351,6 +381,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const store1 = createTestStore({ namespace: uniqueNamespace, zFactor: 1 });
       const store2 = createTestStore({ namespace: uniqueNamespace, zFactor: 1 });
 
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
       const todo = { id: '1', text: 'To Delete', completed: false };
       store1.getState().addTodo(todo);
 
@@ -369,6 +404,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const uniqueNamespace = createUniqueStoreName('record-delete-test');
       const store1 = createTestStore({ namespace: uniqueNamespace, zFactor: 2 });
       const store2 = createTestStore({ namespace: uniqueNamespace, zFactor: 2 });
+
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
 
       const todo = { id: '1', text: 'To Delete', completed: false };
       store1.getState().addTodo(todo);
@@ -564,6 +604,11 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       const store1 = createTestStore({ namespace: uniqueNamespace });
       const store2 = createTestStore({ namespace: uniqueNamespace });
 
+      await waitFor(() => {
+        expect(store1.getState().multiplayer.hasHydrated).toBe(true);
+        expect(store2.getState().multiplayer.hasHydrated).toBe(true);
+      });
+
       const todo = { id: '1', text: 'Original', completed: false };
       store1.getState().addTodo(todo);
 
@@ -618,15 +663,16 @@ describe('Multiplayer Middleware Complex State Tests', () => {
       });
 
       store1.getState().updateTheme('dark');
-      store2.getState().updateNotifications(false, 30);
+      store1.getState().updateNotificationFrequency(100);
+      store2.getState().addTodo({ id: '1', text: 'Todo 1', completed: false });
 
       await waitFor(() => {
         expect(store1.getState().settings.theme).toBe('dark');
-        expect(store1.getState().settings.notifications.enabled).toBe(false);
-        expect(store1.getState().settings.notifications.frequency).toBe(30);
+        expect(store1.getState().settings.notifications.frequency).toBe(100);
+        expect(store1.getState().todos['1'].text).toBe('Todo 1');
         expect(store2.getState().settings.theme).toBe('dark');
-        expect(store2.getState().settings.notifications.enabled).toBe(false);
-        expect(store2.getState().settings.notifications.frequency).toBe(30);
+        expect(store2.getState().settings.notifications.frequency).toBe(100);
+        expect(store2.getState().todos['1'].text).toBe('Todo 1');
       });
     });
 

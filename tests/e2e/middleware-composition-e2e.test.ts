@@ -88,7 +88,7 @@ describe('Multiplayer Middleware Composition', () => {
     expect(store.getState().text).toBe('Hello Immer');
     expect(Object.keys(store.getState().todos).length).toBe(1);
 
-    await store.getState().multiplayer.destroy();
+    await store.multiplayer.destroy();
   });
 
   it('should sync state between clients with immer composition', async () => {
@@ -110,9 +110,6 @@ describe('Multiplayer Middleware Composition', () => {
       expect(store2.getState().nested.items).toContain('Item 1');
     });
 
-    await Promise.all([
-      store1.getState().multiplayer.destroy(),
-      store2.getState().multiplayer.destroy(),
-    ]);
+    await Promise.all([store1.multiplayer.destroy(), store2.multiplayer.destroy()]);
   });
 });

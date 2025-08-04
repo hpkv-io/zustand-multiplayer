@@ -23,7 +23,6 @@ Zustand Multiplayer is a powerful middleware that transforms any Zustand store i
 - **🔧 Granular Storage** - Store individual items in Record fields for conflict-free collaboration (configurable depth)
 - **⚡ Performance Optimized** - Efficient change detection, minimal network traffic, and smart caching
 - **🔌 TypeScript Ready** - Full type safety with proper TypeScript integration and IntelliSense support
-- **🛡️ Conflict Resolution** - Built-in conflict handling with customizable resolution strategies
 - **📊 Monitoring & Debugging** - Comprehensive performance metrics and connection status monitoring
 - **🔐 Secure Authentication** - Token-based authentication with server-side validation
 
@@ -573,55 +572,6 @@ Each nested property gets its own storage key, allowing the middleware to:
 > multiplayer treats records as objects so each record entry will be stored in a separate key-value entry in the database, however arrays are treated as primitive types and array members will not be stored in separate key-value entries.
 >Therefore when dealing with collection of objects that are going to be updated concurrently by multiple users, best is to use records instead of arrays.
 
-
-### 🛡️ Offline Conflict Resolution
-
-When a client goes offline and comes back online, it may have missed updates from other clients. The conflict resolution system handles reconciling local pending changes with the current server state:
-
-```javascript
-const useSharedContentStore = create(
-  multiplayer(
-    (set) => ({
-      content: '',
-      setContent: (content) => set((state) => state.content = state.content + content),
-    }),
-    {
-      namespace: 'shared-document',      
-      onConflict: (conflicts) => {       
-        const contentConflict = conflicts.find(c => c.field === 'content');
-        if (contentConflict) {
-          const localChange = contentConflict.pendingValue;
-          const remoteContent = contentConflict.remoteValue;
-          return {
-            strategy: 'merge',
-            mergedValues: {
-              content: mergeDocumentContent(localChange, remoteContent),
-            }
-          };
-        }
-        // For other fields, prefer remote (server) version
-        return { strategy: 'keep-remote' };
-      },
-      // rest of the options...
-    }
-  )
-);
-
-function mergeDocumentContent(localContent, remoteContent) {
-  // Your merge logic here
-}
-```
-
-**When conflicts occur:**
-1. **Client goes offline** - continues making local changes
-2. **Other clients make changes** - updates are synced to server
-3. **Client comes back online** - detects conflicts between local pending changes and current server state
-4. **Conflict resolution triggers** - your `onConflict` handler decides how to merge
-
-**Available strategies:**
-- `keep-remote`: Use the server state (default - safe choice)
-- `keep-local`: Use your local changes (may overwrite others' work)
-- `merge`: Custom merge with `mergedValues` (merge the changes with the existing ones)
 
 ### 📊 Monitoring and Debugging
 

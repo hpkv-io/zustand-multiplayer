@@ -1,5 +1,4 @@
 import { WebsocketTokenManager } from '@hpkv/websocket-client';
-import { TokenGenerationError } from '../types/multiplayer-types';
 import { escapeRegExp } from '../utils';
 
 /**
@@ -67,7 +66,7 @@ export class TokenHelper {
         try {
           parsedRequest = JSON.parse(requestData) as Partial<TokenRequest>;
         } catch {
-          throw new TokenGenerationError('Invalid request: Could not parse request data');
+          throw new Error('Invalid request: Could not parse request data');
         }
       } else {
         parsedRequest = requestData as Partial<TokenRequest>;
@@ -76,18 +75,14 @@ export class TokenHelper {
       const { namespace, subscribedKeysAndPatterns } = parsedRequest;
 
       if (!namespace || typeof namespace !== 'string') {
-        throw new TokenGenerationError(
-          'Invalid request: namespace is required and must be a string',
-        );
+        throw new Error('Invalid request: namespace is required and must be a string');
       }
 
       const token = await this.generateTokenForStore(namespace, subscribedKeysAndPatterns ?? []);
 
       return { namespace, token };
     } catch (error) {
-      throw error instanceof Error
-        ? new TokenGenerationError(error.message)
-        : new TokenGenerationError('Unknown error during token generation');
+      throw error instanceof Error ? error : new Error('Unknown error during token generation');
     }
   }
 }
