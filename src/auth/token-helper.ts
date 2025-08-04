@@ -1,6 +1,5 @@
 import { WebsocketTokenManager } from '@hpkv/websocket-client';
-import { TokenGenerationError } from '../types/multiplayer-types';
-import { escapeRegExp, createGenericHandler } from '../utils';
+import { escapeRegExp } from '../utils';
 
 /**
  * Request format for token generation endpoint
@@ -26,7 +25,7 @@ export interface TokenResponse {
  * Utility to help generate WebSocket tokens for HPKV
  */
 export class TokenHelper {
-  private tokenManager: WebsocketTokenManager;
+  private readonly tokenManager: WebsocketTokenManager;
 
   /**
    * Creates a new TokenHelper instance
@@ -65,9 +64,9 @@ export class TokenHelper {
 
       if (typeof requestData === 'string') {
         try {
-          parsedRequest = JSON.parse(requestData);
+          parsedRequest = JSON.parse(requestData) as Partial<TokenRequest>;
         } catch {
-          throw new TokenGenerationError('Invalid request: Could not parse request data');
+          throw new Error('Invalid request: Could not parse request data');
         }
       } else {
         parsedRequest = requestData as Partial<TokenRequest>;
@@ -76,41 +75,14 @@ export class TokenHelper {
       const { namespace, subscribedKeysAndPatterns } = parsedRequest;
 
       if (!namespace || typeof namespace !== 'string') {
-        throw new TokenGenerationError(
-          'Invalid request: namespace is required and must be a string',
-        );
+        throw new Error('Invalid request: namespace is required and must be a string');
       }
 
-      const token = await this.generateTokenForStore(namespace, subscribedKeysAndPatterns || []);
+      const token = await this.generateTokenForStore(namespace, subscribedKeysAndPatterns ?? []);
 
       return { namespace, token };
     } catch (error) {
-      throw error instanceof Error
-        ? new TokenGenerationError(error.message)
-        : new TokenGenerationError('Unknown error during token generation');
+      throw error instanceof Error ? error : new Error('Unknown error during token generation');
     }
-  }
-
-  /**
-   * Create a request handler function for Express/Connect style frameworks
-   *
-   * @returns A function that can be used as an Express route handler
-   */
-  createExpressHandler() {
-    return createGenericHandler(this.processTokenRequest.bind(this)).express();
-  }
-
-  /**
-   * Create a handler for Next.js API routes
-   */
-  createNextApiHandler() {
-    return createGenericHandler(this.processTokenRequest.bind(this)).nextjs();
-  }
-
-  /**
-   * Create a handler for Fastify
-   */
-  createFastifyHandler() {
-    return createGenericHandler(this.processTokenRequest.bind(this)).fastify();
   }
 }

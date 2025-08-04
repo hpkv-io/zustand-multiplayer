@@ -1,3 +1,5 @@
+// Logger implementation
+
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
@@ -10,6 +12,8 @@ export interface LogContext {
   clientId?: string;
   operation?: string;
   timestamp: number;
+  // Extended properties for enhanced debugging
+  [key: string]: unknown;
 }
 
 export class Logger {

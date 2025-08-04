@@ -1,10 +1,24 @@
 # Token API Implementation Guide
 
-This guide explains authentication with the zustand multiplayer middleware and how to implement secure token generation.
+This guide explains authentication with the zustand multiplayer middleware and how to implement secure token generation for real-time state synchronization.
+
+## Overview
+
+The Zustand Multiplayer middleware uses a secure token-based authentication system to connect to HPKV's WebSocket infrastructure. This ensures that:
+
+- **Only authorized clients** can access your multiplayer stores
+- **Tokens are scoped** to specific namespaces and access patterns
+- **Security is maintained** without exposing API keys in client code
+- **Rate limiting and monitoring** can be implemented at the token level
 
 ## Why Tokens Are Needed
 
-The zustand multiplayer middleware connects to HPKV via WebSocket to enable real-time state synchronization. **All WebSocket connections require tokens** - tokens contain information about the subscribed keys and access patterns that define which keys the connection can operate on.
+The zustand multiplayer middleware connects to HPKV via WebSocket to enable real-time state synchronization. **All WebSocket connections require tokens** because:
+
+1. **Security**: Tokens provide scoped access without exposing your API key
+2. **Access Control**: Each token defines which keys the connection can operate on
+3. **Monitoring**: Token-based access enables usage tracking and rate limiting
+4. **Flexibility**: Different clients can have different access levels
 
 ## Authentication Approaches
 
@@ -99,7 +113,7 @@ interface TokenRequest {
   // Namespace to generate token for (required)
   namespace: string;
   // Array of specific keys the client needs to subscribe to
-  subscribedKeys: string[];
+  subscribedKeysAndPatterns: string[];
 }
 ```
 
@@ -108,13 +122,13 @@ interface TokenRequest {
 ```json
 {
   "namespace": "my-app-namespace",
-  "subscribedKeys": ["property1", "property2", "userState"]
+  "subscribedKeysAndPatterns": ["property1", "property2", "userState"]
 }
 ```
 
 **Note**: The TokenHelper automatically:
 
-- Uses the provided `subscribedKeys` for WebSocket subscription
+- Uses the provided `subscribedKeysAndPatterns` for WebSocket subscription
 - Generates an access pattern `^namespace:.*$` to restrict operations to the namespace
 - Creates scoped tokens that can only operate on keys within the specified namespace
 
@@ -149,22 +163,61 @@ interface TokenResponse {
 
 ## Implementation Options
 
-You have multiple ways to implement the token generation API using the provided `TokenHelper` class.
+You can implement the token generation API using the provided `TokenHelper` class.
 
-### Option 1: Framework-Specific Handlers (Easiest)
+### TokenHelper Class
 
-`TokenHelper` includes built-in handlers for popular frameworks:
+The `TokenHelper` class must be imported directly from the auth module:
+
+```typescript
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
+```
+
+#### Constructor
+
+```typescript
+new TokenHelper(apiKey: string, baseUrl: string)
+```
+
+#### Available Methods
+
+The `TokenHelper` provides two methods for token generation:
+
+##### `generateTokenForStore(namespace: string, subscribedKeysAnPatterns: string[]): Promise<string>`
+
+Generates a WebSocket token for a specific namespace.
+
+```typescript
+const tokenHelper = new TokenHelper(apiKey, baseUrl);
+const token = await tokenHelper.generateTokenForStore('my-app', ['my-app:todos', 'my-app:*']);
+```
+
+**Parameters:**
+
+- `namespace`: The store namespace
+- `subscribedKeysAnPatterns`: Array of keys and patterns to subscribe to (supports wildcards with `*`)
+
+##### `processTokenRequest(requestData: unknown): Promise<TokenResponse>`
+
+Processes a token request and returns a structured response.
+
+```typescript
+const response = await tokenHelper.processTokenRequest(req.body);
+// Returns: { namespace: 'my-app', token: 'eyJ...' }
+```
+
+### Implementation Examples
 
 #### Express.js
 
 ```typescript
 import express from 'express';
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
 const app = express();
 app.use(express.json());
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 app.post('/api/token', async (req, res) => {
   try {
@@ -174,11 +227,11 @@ app.post('/api/token', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Use the built-in Express handler
-    const handler = tokenHelper.createExpressHandler();
-    return handler(req, res);
+    // Process the token request
+    const response = await tokenHelper.processTokenRequest(req.body);
+    res.status(200).json(response);
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 ```
@@ -187,9 +240,9 @@ app.post('/api/token', async (req, res) => {
 
 ```typescript
 // pages/api/token.ts
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 export default async function handler(req, res) {
   try {
@@ -199,10 +252,11 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Use the built-in Next.js handler
-    return tokenHelper.createNextApiHandler()(req, res);
+    // Process the token request
+    const response = await tokenHelper.processTokenRequest(req.body);
+    res.status(200).json(response);
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 }
 ```
@@ -211,10 +265,10 @@ export default async function handler(req, res) {
 
 ```typescript
 import Fastify from 'fastify';
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
 const fastify = Fastify();
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 fastify.post('/api/token', async (request, reply) => {
   try {
@@ -224,23 +278,23 @@ fastify.post('/api/token', async (request, reply) => {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    // Use the built-in Fastify handler
-    const handler = tokenHelper.createFastifyHandler();
-    return handler(request, reply);
+    // Process the token request
+    const response = await tokenHelper.processTokenRequest(request.body);
+    reply.status(200).send(response);
   } catch (error) {
-    reply.code(401).send({ error: error.message });
+    reply.code(500).send({ error: error.message });
   }
 });
 ```
 
-### Option 2: Framework-Agnostic Request Processing
+#### Custom Implementation
 
-For custom implementations or other frameworks, use the `processTokenRequest` method:
+For other frameworks or custom implementations:
 
 ```typescript
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 // In your route handler (works with any framework):
 async function handleTokenRequest(requestBody, authHeader) {
@@ -261,14 +315,14 @@ async function handleTokenRequest(requestBody, authHeader) {
 }
 ```
 
-### Option 3: Direct Token Generation
+#### Direct Token Generation
 
 For complete custom implementations:
 
 ```typescript
-import { TokenHelper } from '@hpkv/zustand-multiplayer';
+import { TokenHelper } from '@hpkv/zustand-multiplayer/auth/token-helper';
 
-const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY, process.env.HPKV_API_BASE_URL);
+const tokenHelper = new TokenHelper(process.env.HPKV_API_KEY!, process.env.HPKV_API_BASE_URL!);
 
 async function generateToken(requestBody, authHeader) {
   // 1. Authenticate user
@@ -277,12 +331,12 @@ async function generateToken(requestBody, authHeader) {
     throw new Error('Unauthorized');
   }
 
-  // 2. Extract namespace and subscribedKeys from your request
+  // 2. Extract namespace and subscribedKeysAndPatterns from your request
   const namespace = requestBody.namespace;
-  const subscribedKeys = requestBody.subscribedKeys || []; // Default to empty array if not provided
+  const subscribedKeysAndPatterns = requestBody.subscribedKeysAndPatterns || [];
 
   // 3. Generate the token directly
-  const token = await tokenHelper.generateTokenForStore(namespace, subscribedKeys);
+  const token = await tokenHelper.generateTokenForStore(namespace, subscribedKeysAndPatterns);
 
   // 4. Return in your response format
   return { namespace, token };

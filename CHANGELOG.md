@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] 2025-08-04
+
+### Added
+
+- **New `sync` option** for selective synchronization - easily control which state fields sync with other clients
+  ```typescript
+  multiplayer(storeCreator, {
+    namespace: 'my-app',
+    sync: ['sharedData', 'teamSettings'], // Only these fields sync
+  });
+  ```
+- **New `rateLimit` option** for performance optimization - automatically throttle updates to match your HPKV tier
+- **Enhanced `zFactor` configuration** with improved bounds checking (0-10 range) for better conflict resolution
+- **Performance metrics in multiplayer state** - access real-time sync performance data via `multiplayer.performanceMetrics`
+- **New `reHydrate()` method** - renamed from `hydrate()` for better clarity of manual state refresh
+- **Improved documentation** with comprehensive API reference, usage examples, and token generation guides
+
+### Changed
+
+- **BREAKING**: Simplified selective sync API - replaced `publishUpdatesFor`/`subscribeToUpdatesFor` with single `sync` option
+
+  ```typescript
+  // Before (v0.5.x)
+  {
+    publishUpdatesFor: ['field1'],
+    subscribeToUpdatesFor: ['field1']
+  }
+
+  // After (v0.6.0)
+  {
+    sync: ['field1']
+  }
+  ```
+
+- **BREAKING**: Multiplayer state API changes:
+  - `hydrate()` method renamed to `reHydrate()` for clarity
+  - Added `performanceMetrics` property for real-time performance data
+
+- **BREAKING**: Configuration options simplified:
+  - Removed `clientConfig`, `retryConfig`, `profiling`, and `onConflict` options
+  - Performance metrics profiling is always enabled
+  - Replaced complex conflict resolution with automatic server-wins strategy
+  - Streamlined configuration for better developer experience
+
+- **Improved performance** for state synchronization and conflict resolution
+- **Better TypeScript support** with cleaner type definitions and improved inference
+
+### Fixed
+
+- Resolved issues with nested property synchronization
+- Fixed edge cases in zFactor implementation affecting storage granularity
+- Improved handling of complex state structures
+
 ## [0.5.0] 2025-07-25
 
 ### Added
@@ -121,7 +174,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.0...v0.4.1

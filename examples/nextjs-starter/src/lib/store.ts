@@ -20,25 +20,36 @@ export const useTodoStore = create<WithMultiplayer<TodoState>>()(
     set => ({
       todos: {},
       addTodo: (text: string) =>
-        set((state: TodoState) => {
-          state.todos[Date.now().toString()] = {
-            id: Date.now().toString(),
-            text,
-            completed: false,
-          };
+        set((state) => {
+          const id = Date.now().toString();
+          return {
+            ...state,
+            todos: {
+              ...state.todos,
+              [id]: {
+                id,
+                text,
+                completed: false,
+              }
+            }
+          }
         }),
       toggleTodo: (id: string) =>
-        set((state: TodoState) => {
-          if (state.todos[id]) {
-            state.todos[id].completed = !state.todos[id].completed;
-          }
-        }),
+        set((state) => ({
+          todos: {
+            ...state.todos,
+            [id]: {
+              ...state.todos[id],
+              completed: !state.todos[id].completed,
+            },
+          },
+        })),
       removeTodo: (id: string) =>
-        set((state: TodoState) => {
-          if (state.todos[id]) {
-            delete state.todos[id];
-          }
-        }),
+        set((state) => ({
+          todos: Object.fromEntries(
+            Object.entries(state.todos).filter(([key]) => key !== id)
+          ),
+        })),
     }),
     {
       namespace: 'todo-store',

@@ -73,7 +73,13 @@ const tokenHelper = new TokenHelper(
   process.env.HPKV_API_BASE_URL
 );
 
-app.post('/api/generate-token', tokenHelper.createExpressHandler());
+app.post('/api/generate-token', async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const response = await tokenHelper.processTokenRequest(req.body);
+  res.json(response);
+});
 ```
 
 This endpoint generates authentication tokens for the multiplayer service.
@@ -95,43 +101,49 @@ Provides client-side configuration without exposing sensitive API keys.
 
 ```javascript
 const todoStore = createStore(
-  multiplayer(
-    (set) => ({
-      todos: [],
-      
-      addTodo: (text) => 
-        set((state) => ({
-          todos: [
-            ...state.todos,
-            {
-              id: Date.now().toString(),
-              text,
-              completed: false,
-            },
-          ],
-        })),
-        
-      toggleTodo: (id) =>
-        set((state) => ({
-          todos: state.todos.map((todo) =>
-            todo.id === id
-              ? { ...todo, completed: !todo.completed }
-              : todo
-          ),
-        })),
-        
-      removeTodo: (id) =>
-        set((state) => ({
-          todos: state.todos.filter((todo) => todo.id !== id),
-        })),
-    }),
-    {
-      namespace: 'todo-store',
-      tokenGenerationUrl: '/api/generate-token',
-      apiBaseUrl: config.apiBaseUrl,
-    }
-  )
-);
+        multiplayer(
+          (set) => ({
+            todos: {},
+
+            addTodo: (text) =>
+              set((state) => {
+                const id = Date.now().toString();
+                return {
+                  ...state,
+                  todos: {
+                    ...state.todos,
+                    [id]: {
+                      id,
+                      text,
+                      completed: false,
+                    }
+                  }
+                }
+              }),
+            toggleTodo: (id) =>
+              set((state) => ({
+                todos: {
+                  ...state.todos,
+                  [id]: {
+                    ...state.todos[id],
+                    completed: !state.todos[id].completed,
+                  },
+                },
+              })),
+            removeTodo: (id) =>
+              set((state) => ({
+                todos: Object.fromEntries(
+                  Object.entries(state.todos).filter(([key]) => key !== id)
+                ),
+              })),
+          }),
+          {
+            namespace: 'todo-store',
+            tokenGenerationUrl: '/api/generate-token',
+            apiBaseUrl: config.apiBaseUrl,
+          }
+        )
+      );
 ```
 
 #### Key Points:
@@ -207,22 +219,3 @@ express-starter/
 │   └── dist/            # Built client bundle
 └── .env                 # Environment configuration
 ```
-
-## Key Concepts
-
-### 1. Middleware Pattern
-The `multiplayer()` function wraps your Zustand store, adding real-time synchronization without changing your existing state management logic.
-
-### 2. Secure Token Generation
-Authentication tokens are generated server-side to keep API keys secure, following the recommended security pattern.
-
-### 3. Automatic Synchronization
-State changes are automatically synchronized across all connected clients. No additional code needed for real-time updates.
-
-### 4. Connection Resilience
-The middleware handles connection drops and reconnections automatically, providing status updates through the state.
-
-## Next Steps
-
-- Explore the [main documentation](../../README.md) for advanced features
-- Check out other examples in the repository 

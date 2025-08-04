@@ -7,43 +7,42 @@ const { TokenHelper } = require('@hpkv/zustand-multiplayer');
 
 const app = express();
 
-// Enable CORS for all origins (in production, configure this properly)
 app.use(cors());
 
-// Parse JSON bodies
 app.use(express.json());
 
-// Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Configuration endpoint for client-side settings
-app.get('/api/config', (req, res) => {
+app.get('/api/config', (_req, res) => {
   res.json({
     apiBaseUrl: process.env.HPKV_API_BASE_URL,
   });
 });
 
-// Token generation endpoint
 const tokenHelper = new TokenHelper(
   process.env.HPKV_API_KEY,
   process.env.HPKV_API_BASE_URL
 );
 
-app.post('/api/generate-token', tokenHelper.createExpressHandler());
 
-// Serve the main page
-app.get('/', (req, res) => {
+app.post('/api/generate-token', async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const response = await tokenHelper.processTokenRequest(req.body);
+  res.json(response);
+});
+
+app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error(err.stack);
   res.status(500).send('Something broke!');
 });
 
-// 404 handler
-app.use((req, res) => {
+app.use((_req, res) => {
   res.status(404).send('Page not found');
 });
 
