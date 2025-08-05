@@ -112,6 +112,11 @@ export class StateMerger<TState> {
     let current = (state as Record<string, unknown>)[segments[0]] as Record<string, unknown>;
 
     for (let i = 1; i <= this.zFactor && i < segments.length; i++) {
+      // Check if object is extensible before adding properties
+      if (!Object.isExtensible(current)) {
+        // Return a copy of the non-extensible object to allow merging
+        current = { ...current };
+      }
       current[segments[i]] ??= {};
       current = current[segments[i]] as Record<string, unknown>;
     }
