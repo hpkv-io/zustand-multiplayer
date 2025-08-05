@@ -290,6 +290,9 @@ export class HPKVStorage {
       try {
         if (typeof data.value === 'string') {
           const storedValue: StoredValue = JSON.parse(data.value) as StoredValue;
+          if (storedValue.clientId === this.getClientId()) {
+            return;
+          }
           actualValue = storedValue.value;
         }
       } catch {

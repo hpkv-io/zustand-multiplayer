@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] 2025-08-05
+
+### Fixed
+
+- Fixed an issue with usage in combination with immer.In some cases merging state into non-extensible objects would fail.
+- Fixed self-update bug where clients would unnecessarily process their own state updates.
+
 ## [0.6.0] 2025-08-04
 
 ### Added
@@ -174,7 +181,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Partial state persistence with the partialize option
 - TokenHelper class for server-side token generation
 
-[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/hpkv-io/zustand-multiplayer/compare/v0.4.1...v0.4.2
