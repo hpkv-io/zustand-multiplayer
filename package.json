@@ -1,0 +1,102 @@
+{
+  "name": "@hpkv/zustand-multiplayer",
+  "version": "1.0.0",
+  "description": "A multiplayer middleware for Zustand using HPKV",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && rollup -c rollup.config.mjs",
+    "build:watch": "rollup -c rollup.config.mjs -w",
+    "clean": "rimraf dist",
+    "prepare": "npm run build",
+    "verify-build": "node scripts/verify-build.js",
+    "postbuild": "npm run verify-build",
+    "test": "vitest run --testTimeout=60000",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "type-check": "tsc --noEmit",
+    "type-check:build": "tsc --noEmit -p tsconfig.build.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format:fix": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "fix": "npm run format:fix && npm run lint:fix",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "analyze": "npm run build && node scripts/analyze-bundle.js",
+    "check": "npm run type-check && npm run lint && npm run format:check && npm run test",
+    "check:build": "npm run type-check:build && npm run lint && npm run format:check",
+    "prepack": "npm run lint && npm run format:check && npm run type-check && npm run build",
+    "size-check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "zustand",
+    "state management",
+    "hpkv",
+    "multiplayer",
+    "collaborative",
+    "zustand middleware",
+    "sync",
+    "persist",
+    "realtime"
+  ],
+  "author": "HPKV Team",
+  "homepage": "https://github.com/hpkv-io/zustand-multiplayer#readme",
+  "bugs": {
+    "url": "https://github.com/hpkv-io/zustand-multiplayer/issues",
+    "email": "support@hpkv.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hpkv-io/zustand-multiplayer.git"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.30.1",
+    "@typescript-eslint/parser": "^8.30.1",
+    "@vitest/eslint-plugin": "^1.1.43",
+    "dotenv": "^16.3.1",
+    "eslint": "^9.31.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-prettier": "^5.2.3",
+    "eslint-plugin-react": "^7.37.3",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.3.0",
+    "prettier": "^3.4.2",
+    "rimraf": "^5.0.0",
+    "rollup": "^4.45.1",
+    "rollup-plugin-dts": "^6.2.1",
+    "tslib": "^2.8.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4",
+    "zustand": "^5.0.3"
+  },
+  "dependencies": {
+    "@hpkv/websocket-client": "^1.4.1"
+  }
+}

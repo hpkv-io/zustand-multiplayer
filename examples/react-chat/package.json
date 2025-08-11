@@ -1,0 +1,29 @@
+{
+  "name": "react-chat-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time chat application example using Zustand Multiplayer middleware",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "@hpkv/zustand-multiplayer": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5",
+    "vite": "^7.1.1"
+  }
+}
