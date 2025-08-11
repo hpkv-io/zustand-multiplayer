@@ -1,0 +1,41 @@
+# Build output
+dist/
+build/
+lib/
+coverage/
+.next/
+
+# Dependency directories
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+.env.*
+
+# Cache
+.cache/
+.npm/
+
+# Editor directories and files
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Other
+README.md
+LICENSE 
