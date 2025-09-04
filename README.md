@@ -47,6 +47,8 @@ Explore our example applications to see Zustand Multiplayer in action:
 | **[Next.js Collaborative Todo](examples/nextjs-collaborative-todo)** | Full-stack todo application with real-time task synchronization | ✅ | ✅ | ✅ | | | |
 | **[JavaScript Collaborative Todo](examples/javascript-collaborative-todo)** | Vanilla JavaScript todo app with minimal Express.js backend | | | | ✅ | | ✅ |
 | **[Next.js Tic-Tac-Toe Game](examples/nextjs-tic-tac-toe)** | Multiplayer tic-tac-toe game with live scoreboard and turn management | ✅ | ✅ | ✅ | | | |
+| **[React Live Cursors](examples/react-live-cursors)** | Real-time collaborative cursor tracking | | ✅ | | ✅ | ✅ | ✅ |
+| **[JavaScript Live Cursors](examples/javascript-live-cursors)** | Vanilla JavaScript live cursor tracking with real-time synchronization | | | | ✅ | ✅ | ✅ |
 
 
 ## Support

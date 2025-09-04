@@ -1,7 +1,7 @@
 import { multiplayer } from '@hpkv/zustand-multiplayer';
-import { create } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 
-const useChatStore = create(
+const chatStore = createStore(
   multiplayer(
     set => ({
       messages: {},
@@ -58,7 +58,7 @@ class ChatApp {
     this.render();
     this.attachEventListeners();
 
-    this.unsubscribe = useChatStore.subscribe(() => {
+    this.unsubscribe = chatStore.subscribe(() => {
       this.updateMessages();
       this.updateConnectionStatus();
       this.updateUserInfo();
@@ -142,7 +142,7 @@ class ChatApp {
       const username = input.value.trim();
 
       if (username) {
-        useChatStore.getState().setCurrentUser(username);
+        chatStore.getState().setCurrentUser(username);
         this.showUsernameModal = false;
         document.getElementById('username-modal').style.display = 'none';
 
@@ -162,8 +162,8 @@ class ChatApp {
       const input = document.getElementById('message-input');
       const text = input.value.trim();
 
-      if (text && useChatStore.getState().currentUser) {
-        useChatStore.getState().sendMessage(text);
+      if (text && chatStore.getState().currentUser) {
+        chatStore.getState().sendMessage(text);
         input.value = '';
       }
     });
@@ -184,7 +184,7 @@ class ChatApp {
   }
 
   updateMessages() {
-    const state = useChatStore.getState();
+    const state = chatStore.getState();
     const messages = Object.values(state.messages).sort((a, b) => a.timestamp - b.timestamp);
 
     const messageList = document.getElementById('message-list');
@@ -216,7 +216,7 @@ class ChatApp {
   }
 
   updateConnectionStatus() {
-    const state = useChatStore.getState();
+    const state = chatStore.getState();
     const connectionState = state.multiplayer?.connectionState;
     const isConnected = connectionState === 'CONNECTED';
 
@@ -230,7 +230,7 @@ class ChatApp {
   }
 
   updateUserInfo() {
-    const state = useChatStore.getState();
+    const state = chatStore.getState();
     const userInfo = document.getElementById('user-info');
     const username = document.getElementById('current-username');
 

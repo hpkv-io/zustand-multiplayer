@@ -1,13 +1,13 @@
-# Collaborative Todo App - Vite + Express.js
+# Live Cursors Example - Vanilla Javascript
 
 ![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E)
 ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
 ![Express.js](https://img.shields.io/badge/express.js-%23404d59.svg?style=for-the-badge&logo=express&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-A real-time collaborative todo application powered by [HPKV](https://hpkv.io) and [Zustand](https://zustand.docs.pmnd.rs/).
+Real-time live cursors powered by [HPKV](https://hpkv.io) and [Zustand](https://zustand.docs.pmnd.rs/).
 
-![Collaborative Todo App Screenshot](../../.github/assets/examples/collaborative-todo-list.png)
+![Live Cursors](../../.github/assets/examples/react-live-cursors.png)
 
 
 ## Prerequisites
@@ -31,7 +31,7 @@ You need an API key to run this example:
 2. **Environment Setup:**
    Copy the example environment file in this directory:
    ```bash
-   cp examples/javascript-collaborative-todo/.env.example examples/javascript-collaborative-todo/.env
+   cp examples/javascript-live-cursors/.env.example examples/javascript-live-cursors/.env
    ```
 
    Edit the `.env` file with your HPKV credentials:
@@ -50,13 +50,13 @@ You need an API key to run this example:
 4. **Run the example:**
    ```bash
    # From monorepo root
-   pnpm --filter javascript-collaborative-todo dev
+   pnpm --filter javascript-live-cursors dev
    
    # Or use Turbo
-   pnpm turbo dev --filter javascript-collaborative-todo
+   pnpm turbo dev --filter javascript-live-cursors
    ```
 
    This starts both the token generation API server (port 3000) and Vite dev server (port 5173).
 
 4. **Open in multiple browser windows:**
-   Navigate to `http://localhost:5173` in different browser windows and update the todo list to see the changes synchronized across all windows
+   Navigate to `http://localhost:5173` in different browser windows and move your cursor to see synchronized live cursors in different windows

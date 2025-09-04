@@ -1,0 +1,68 @@
+.app {
+  min-height: 100vh;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.header {
+  text-align: center;
+  color: white;
+}
+
+.header h1 {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  opacity: 0.9;
+}
+
+.canvas-container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.instructions {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 15px;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.instructions h3 {
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.instructions ul {
+  list-style: none;
+  padding: 0;
+}
+
+.instructions li {
+  padding: 0.5rem 0;
+  color: #666;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.instructions li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: #667eea;
+  font-weight: bold;
+}
