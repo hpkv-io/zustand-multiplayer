@@ -40,32 +40,13 @@ This monorepo is organized using [pnpm workspaces](https://pnpm.io/workspaces) a
 
 Explore our example applications to see Zustand Multiplayer in action:
 
-### [Next.js Chat App](examples/nextjs-chat)
-A real-time chat application built with Next.js demonstrating:
-- Real-time chat synchronization
-- TypeScript integration
-- Token-based authentication
-
-### [JavaScript Chat App](examples/javascript-chat)
-A vanilla JavaScript chat implementation showing:
-- Framework-free real-time chat
-- Vite-based development
-- Pure JavaScript approach
-- Token-based authentication
-
-### [Next.js Collaborative Todo](examples/nextjs-collaborative-todo)
-A full-stack Next.js application demonstrating:
-- Real-time todo synchronization
-- TypeScript integration
-- Token-based authentication
-
-### [JavaScript Collaborative Todo](examples/javascript-collaborative-todo)
-A vanilla JavaScript implementation showing:
-- Framework-free real-time sync
-- Simple Express.js backend
-- Minimal setup requirements
-- Token-based authentication
-
+| Example | Description | Next.js | React | TypeScript | JavaScript | Vite | Express |
+|---------|-------------|---------|-------|------------|------------|------|---------|
+| **[Next.js Chat App](examples/nextjs-chat)** | Real-time chat application with message synchronization and user management | ✅ | ✅ | ✅ | | | |
+| **[JavaScript Chat App](examples/javascript-chat)** | Framework-free vanilla JavaScript chat with Vite development setup | | | | ✅ | ✅ | ✅ |
+| **[Next.js Collaborative Todo](examples/nextjs-collaborative-todo)** | Full-stack todo application with real-time task synchronization | ✅ | ✅ | ✅ | | | |
+| **[JavaScript Collaborative Todo](examples/javascript-collaborative-todo)** | Vanilla JavaScript todo app with minimal Express.js backend | | | | ✅ | | ✅ |
+| **[Next.js Tic-Tac-Toe Game](examples/nextjs-tic-tac-toe)** | Multiplayer tic-tac-toe game with live scoreboard and turn management | ✅ | ✅ | ✅ | | | |
 
 
 ## Support
