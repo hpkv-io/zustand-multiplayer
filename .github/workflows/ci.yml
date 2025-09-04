@@ -54,6 +54,10 @@ jobs:
 
       - name: Build packages
         run: pnpm build
+        env:
+          HPKV_API_BASE_URL: ${{ secrets.HPKV_API_BASE_URL }}
+          HPKV_API_KEY: ${{ secrets.HPKV_API_KEY }}
+          NEXT_PUBLIC_HPKV_API_BASE_URL: ${{ secrets.HPKV_API_BASE_URL }}
 
       - name: Run tests
         run: pnpm test
