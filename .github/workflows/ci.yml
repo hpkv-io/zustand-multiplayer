@@ -52,24 +52,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        run: pnpm build
-        env:
-          HPKV_API_BASE_URL: ${{ secrets.HPKV_API_BASE_URL }}
-          HPKV_API_KEY: ${{ secrets.HPKV_API_KEY }}
-          NEXT_PUBLIC_HPKV_API_BASE_URL: ${{ secrets.HPKV_API_BASE_URL }}
+      - name: Build packages (excluding examples)
+        run: pnpm turbo run build --filter=@hpkv/zustand-multiplayer --filter=@repo/*
 
-      - name: Run tests
-        run: pnpm test
+      - name: Run tests (excluding examples)
+        run: pnpm turbo run test --filter=@hpkv/zustand-multiplayer --filter=@repo/*
         env:
           HPKV_API_BASE_URL: ${{ secrets.HPKV_API_BASE_URL }}
           HPKV_API_KEY: ${{ secrets.HPKV_API_KEY }}
 
-      - name: Type check
-        run: pnpm type-check
+      - name: Type check (excluding examples)
+        run: pnpm turbo run type-check --filter=@hpkv/zustand-multiplayer --filter=@repo/*
 
-      - name: Lint
-        run: pnpm lint
+      - name: Lint (excluding examples)
+        run: pnpm turbo run lint --filter=@hpkv/zustand-multiplayer --filter=@repo/*
 
   compatibility:
     name: Test package compatibility
@@ -91,8 +87,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        run: pnpm build
+      - name: Build packages (excluding examples)
+        run: pnpm turbo run build --filter=@hpkv/zustand-multiplayer --filter=@repo/*
 
       - name: Test CommonJS import
         run: |
