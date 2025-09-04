@@ -1,7 +1,7 @@
 import { multiplayer } from '@hpkv/zustand-multiplayer';
-import { create } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 
-const useTodoStore = create(
+const todoStore = createStore(
   multiplayer(
     set => ({
       todos: {},
@@ -54,7 +54,7 @@ class TodoApp {
     this.render();
     this.attachEventListeners();
 
-    this.unsubscribe = useTodoStore.subscribe(() => {
+    this.unsubscribe = todoStore.subscribe(() => {
       this.updateTodoList();
       this.updateConnectionStatus();
     });
@@ -118,7 +118,7 @@ class TodoApp {
       const text = input.value.trim();
 
       if (text) {
-        useTodoStore.getState().addTodo(text);
+        todoStore.getState().addTodo(text);
         input.value = '';
       }
     });
@@ -137,7 +137,7 @@ class TodoApp {
   }
 
   updateTodoList() {
-    const state = useTodoStore.getState();
+    const state = todoStore.getState();
     const todos = Object.values(state.todos);
 
     const filteredTodos = todos.filter(todo => {
@@ -180,20 +180,20 @@ class TodoApp {
 
       todoList.querySelectorAll('.todo-checkbox').forEach(checkbox => {
         checkbox.addEventListener('change', () => {
-          useTodoStore.getState().toggleTodo(checkbox.dataset.id);
+          todoStore.getState().toggleTodo(checkbox.dataset.id);
         });
       });
 
       todoList.querySelectorAll('.delete-button').forEach(button => {
         button.addEventListener('click', () => {
-          useTodoStore.getState().removeTodo(button.dataset.id);
+          todoStore.getState().removeTodo(button.dataset.id);
         });
       });
     }
   }
 
   updateConnectionStatus() {
-    const state = useTodoStore.getState();
+    const state = todoStore.getState();
     const connectionState = state.multiplayer?.connectionState;
     const isConnected = connectionState === 'CONNECTED';
 

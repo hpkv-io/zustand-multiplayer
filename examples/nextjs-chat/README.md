@@ -1,7 +1,7 @@
 # Next.js Chat App with Zustand Multiplayer
-![Typescript](https://img.shields.io/badge/typescript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E)
-![NextJs](https://img.shields.io/badge/nextjs-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
-![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-%23000000.svg?style=for-the-badge&logo=next.js&logoColor=white)
+![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
 A real-time chat application built with Next.js and Zustand Multiplayer middleware, demonstrating how to create collaborative applications with multiplayer middleware.
 
