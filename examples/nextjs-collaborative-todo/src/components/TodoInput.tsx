@@ -16,16 +16,16 @@ const TodoInput: React.FC = () => {
 
   return (
     <div className={styles['add-task-section']}>
-      <form onSubmit={handleSubmit} className={styles['todo-form']}>
+      <form className={styles['todo-form']} onSubmit={handleSubmit}>
         <input
+          autoFocus
+          className={styles['todo-input']}
+          placeholder="Add a new task..."
           type="text"
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="Add a new task..."
-          className={styles['todo-input']}
-          autoFocus
         />
-        <button type="submit" className={styles['todo-submit']}>
+        <button className={styles['todo-submit']} type="submit">
           <span className={styles['plus-icon']}>+</span>
         </button>
       </form>

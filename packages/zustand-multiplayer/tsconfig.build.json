@@ -1,0 +1,14 @@
+{
+  "extends": "@repo/typescript-config/build.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "types": ["node"],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "removeComments": false,
+    "importHelpers": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests", "examples", "**/*.test.ts", "**/*.spec.ts"]
+}
