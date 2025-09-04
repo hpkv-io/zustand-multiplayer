@@ -14,9 +14,9 @@ export default function Home() {
     <>
       <Head>
         <title>ToDo App</title>
-        <meta name="description" content="A clean, minimalistic ToDo app with a modern design" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.ico" />
+        <meta content="A clean, minimalistic ToDo app with a modern design" name="description" />
+        <meta content="width=device-width, initial-scale=1" name="viewport" />
+        <link href="/favicon.ico" rel="icon" />
       </Head>
       <div className={`${styles.page} ${roboto.variable}`}>
         <main className={styles.main}>

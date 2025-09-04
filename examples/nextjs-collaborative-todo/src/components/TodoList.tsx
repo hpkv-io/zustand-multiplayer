@@ -26,16 +26,16 @@ const TodoList: React.FC<TodoListProps> = ({ filter }) => {
           className={`${styles['todo-item']} ${todo.completed ? styles['completed'] : ''}`}
         >
           <input
-            type="checkbox"
             checked={!!todo.completed}
-            onChange={() => toggleTodo(todo.id)}
             className={styles['todo-checkbox']}
+            type="checkbox"
+            onChange={() => toggleTodo(todo.id)}
           />
           <span className={styles['todo-text']}>{todo.text}</span>
           <button
+            aria-label="Delete task"
             className={styles['delete-button']}
             onClick={() => removeTodo(todo.id)}
-            aria-label="Delete task"
           >
             &times;
           </button>

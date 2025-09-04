@@ -11,8 +11,14 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+build
 *.local
 *.tgz
+
+# Monorepo specific
+.turbo
+.changeset/*.md
+!.changeset/README.md
 
 # Editor directories and files
 .vscode/*
@@ -33,4 +39,14 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local 
+
+# Testing
 coverage/
+*.tsbuildinfo
+
+# Next.js
+.next/
+out/
+
+# Package manager
+.pnpm-store/

@@ -15,13 +15,12 @@ interface TodoState {
   removeTodo: (id: string) => void;
 }
 
-
 export const useTodoStore = create<WithMultiplayer<TodoState>>()(
   multiplayer(
     set => ({
       todos: {},
       addTodo: (text: string) =>
-        set((state) => {
+        set(state => {
           const id = Date.now().toString();
           return {
             ...state,
@@ -31,12 +30,12 @@ export const useTodoStore = create<WithMultiplayer<TodoState>>()(
                 id,
                 text,
                 completed: false,
-              }
-            }
-          }
+              },
+            },
+          };
         }),
       toggleTodo: (id: string) =>
-        set((state) => ({
+        set(state => ({
           todos: {
             ...state.todos,
             [id]: {
@@ -46,16 +45,14 @@ export const useTodoStore = create<WithMultiplayer<TodoState>>()(
           },
         })),
       removeTodo: (id: string) =>
-        set((state) => ({
-          todos: Object.fromEntries(
-            Object.entries(state.todos).filter(([key]) => key !== id)
-          ),
+        set(state => ({
+          todos: Object.fromEntries(Object.entries(state.todos).filter(([key]) => key !== id)),
         })),
     }),
     {
       namespace: 'todo-store',
       tokenGenerationUrl: `${process.env.NEXT_PUBLIC_SERVER_URL}/api/generate-token`,
       apiBaseUrl: process.env.NEXT_PUBLIC_HPKV_API_BASE_URL!,
-    }
-  )
+    },
+  ),
 );
