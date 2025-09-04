@@ -1,13 +1,11 @@
-# Collaborative Todo App - Vite + Express.js
-
+# Next.js Chat App with Zustand Multiplayer
 ![Typescript](https://img.shields.io/badge/typescript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E)
 ![NextJs](https://img.shields.io/badge/nextjs-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=react&logoColor=white)
 
-A real-time collaborative todo application powered by [HPKV](https://hpkv.io) and [Zustand](https://zustand.docs.pmnd.rs/).
+A real-time chat application built with Next.js and Zustand Multiplayer middleware, demonstrating how to create collaborative applications with multiplayer middleware.
 
-![Collaborative Todo App Screenshot](../../.github/assets/examples/collaborative-todo-list.png)
-
+![Chat App Screenshot](../../.github/assets/examples/chat.png)
 
 ## Prerequisites
 
@@ -30,7 +28,7 @@ You need an API key to run this example:
 2. **Environment Setup:**
    Copy the example environment file in this directory:
    ```bash
-   cp examples/nextjs-collaborative-todo/.env.example examples/nextjs-collaborative-todo/.env.local
+   cp examples/nextjs-chat/.env.example examples/nextjs-chat/.env.local
    ```
 
    Edit the `.env.local` file with your HPKV credentials:
@@ -50,11 +48,11 @@ You need an API key to run this example:
 4. **Run the example:**
    ```bash
    # From monorepo root
-   pnpm --filter nextjs-collaborative-todo dev
+   pnpm --filter nextjs-chat dev
    
    # Or use Turbo
-   pnpm turbo dev --filter nextjs-collaborative-todo
+   pnpm turbo dev --filter nextjs-chat
    ```
 
 4. **Open in multiple browser windows:**
-   Navigate to `http://localhost:3000` in different browser windows and update the todo list to see the changes synchronized across all windows
+   Navigate to `http://localhost:5173` in different browser windows, enter usernames, and see the chat messages sent across windows in real-time!
