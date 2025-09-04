@@ -19,7 +19,6 @@ build
 .turbo
 .changeset/*.md
 !.changeset/README.md
-pnpm-lock.yaml
 
 # Editor directories and files
 .vscode/*
