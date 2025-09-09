@@ -1,0 +1,66 @@
+.formulaBar {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #dadce0;
+  gap: 8px;
+}
+
+.cellIndicator {
+  min-width: 60px;
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.functionButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: white;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 600;
+  color: #5f6368;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.functionButton:hover {
+  background: #e8eaed;
+}
+
+.formulaForm {
+  flex: 1;
+  display: flex;
+}
+
+.formulaInput {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: white;
+  transition: border-color 0.2s;
+}
+
+.formulaInput:focus {
+  outline: none;
+  border-color: #1a73e8;
+}
+
+.formulaInput:disabled {
+  background: #f8f9fa;
+  color: #999;
+  cursor: not-allowed;
+}
