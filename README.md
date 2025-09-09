@@ -50,6 +50,7 @@ Explore our example applications to see Zustand Multiplayer in action:
 | **[Next.js Collaborative Drawing](examples/nextjs-collaborative-drawing)** | Real-time collaborative drawing canvas with live cursors and synchronized strokes | ✅ | ✅ | ✅ | | | |
 | **[React Live Cursors](examples/react-live-cursors)** | Real-time collaborative cursor tracking | | ✅ | | ✅ | ✅ | ✅ |
 | **[JavaScript Live Cursors](examples/javascript-live-cursors)** | Vanilla JavaScript live cursor tracking with real-time synchronization | | | | ✅ | ✅ | ✅ |
+| **[Next.js Collaborative Spreadsheet](examples/nextjs-collaborative-spreadsheet)** | Real-time collaborative spreadsheet with formulas, formatting, and multi-user editing | ✅ | ✅ | ✅ | | | |
 
 
 ## 🤝 Contributing
@@ -74,31 +75,7 @@ We welcome contributions from the community! Whether you're fixing bugs, adding 
 - 🎥 **Create tutorials** or blog posts about the library
 - 💬 **Help others** in [GitHub Discussions](https://github.com/hpkv-io/zustand-multiplayer/discussions)
 
-### Development Setup
-
-```bash
-# Clone your fork
-git clone https://github.com/your-username/zustand-multiplayer.git
-cd zustand-multiplayer
-
-# Install dependencies
-pnpm install
-
-# Build packages
-pnpm turbo build
-
-# Run tests
-pnpm turbo test
-
-# Run an example
-pnpm --filter nextjs-chat dev
-```
-
 For detailed contribution guidelines, development setup, code standards, and testing procedures, please see our [**Contributing Guide**](CONTRIBUTING.md).
-
-### Contributor Recognition
-
-We appreciate all contributors! Check out our contributors on GitHub and join our growing community of developers building the future of real-time collaborative applications.
 
 ## 📞 Support
 

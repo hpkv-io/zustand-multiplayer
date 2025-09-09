@@ -638,12 +638,12 @@ store.multiplayer.getMetrics();             // Performance metrics
 
 ### Rate Limiting & Throttling
 
-HPKV has rate limits based on your tier (Free tier: 10 requests/second). The `rateLimit` option enables automatic throttling to avoid hitting these limits:
+HPKV has rate limits based on your tier (Free tier: 50 requests/second). The `rateLimit` option enables automatic throttling to avoid hitting these limits:
 
 ```typescript
 {
   namespace: 'high-frequency-app',
-  rateLimit: 10,  // Automatically throttle to 10 updates/second
+  rateLimit: 50,  // Automatically throttle to 50 updates/second
 }
 ```
 
@@ -656,41 +656,23 @@ HPKV has rate limits based on your tier (Free tier: 10 requests/second). The `ra
 
 ### 📦 Example Applications
 
-We provide two complete example applications demonstrating real-world usage:
-
-#### 1. **Next.js + React - Collaborative ToDo List Example** ([`/examples/nextjs-collaborative-todo`](./examples/nextjs-collaborative-todo))
-- Full-stack setup with Next.js
-- Token generation endpoint implementation
-- React hooks integration
-- TypeScript
-
-#### 2. **Vanilla JS - Collaborative ToDo List Example** ([`/examples/javascript-collaborative-todo`](./examples/javascript-collaborative-todo))
-- Vanilla JavaScript (no framework)
-- HTML5 with real-time updates
-- Token endpoint with Express.js
-
-#### 2. **React - Realtime Chat Example** ([`/examples/react-chat`](./examples/react-chat))
-A traditional web application demonstrating:
-- React
-- Token endpoint with Express.js
-- Typescript
+Refer to our [examples](../../examples/README.md) for examples of real world use cases. There are examples for:
+- Collaborative To-Do List
+- Collaborative Drawing
+- Collaborative Spreadsheet
+- Chat Applications
+- Live Cursors & User Presence
+- Multiplayer Games
 
 ### 📚 Documentation
 
 - **[API Documentation](./docs/API_REFERENCE.md)** - Detailed API reference
 - **[Token Setup Guide](./docs/TOKEN_API.md)** - Authentication implementation
-- **[Migration Guide](./CHANGELOG.md)** - Upgrading from older versions
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+We welcome contributions! See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
 
-```bash
-git clone https://github.com/hpkv-io/zustand-multiplayer.git
-cd zustand-multiplayer
-npm install
-npm test
-```
 
 ## Support
 

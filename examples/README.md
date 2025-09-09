@@ -6,7 +6,7 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 
 <div align="center">
 
-### Next.js Chat Application
+### [Next.js Chat Application](./nextjs-chat)
 [<img src="../.github/assets/examples/chat.png" alt="Next.js Chat" width="400">](./nextjs-chat)
 
 **Real-time chat application with message synchronization and user management**
@@ -15,11 +15,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Next.js](https://img.shields.io/badge/Next.js-%23000000.svg?style=for-the-badge&logo=next.js&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./nextjs-chat/README.md) | [🔧 Run Example](./nextjs-chat)
-
 ---
 
-### JavaScript Chat Application
+### [JavaScript Chat Application](./javascript-chat)
 [<img src="../.github/assets/examples/chat.png" alt="JavaScript Chat" width="400">](./javascript-chat)
 
 **Framework-free vanilla JavaScript chat with Vite development setup**
@@ -28,11 +26,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./javascript-chat/README.md) | [🔧 Run Example](./javascript-chat)
-
 ---
 
-### Next.js Collaborative Todo List
+### [Next.js Collaborative Todo List](./nextjs-collaborative-todo)
 [<img src="../.github/assets/examples/collaborative-todo-list.png" alt="Collaborative Todo" width="400">](./nextjs-collaborative-todo)
 
 **Full-stack todo application with real-time task synchronization**
@@ -41,11 +37,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Next.js](https://img.shields.io/badge/Next.js-%23000000.svg?style=for-the-badge&logo=next.js&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./nextjs-collaborative-todo/README.md) | [🔧 Run Example](./nextjs-collaborative-todo)
-
 ---
 
-### JavaScript Collaborative Todo List
+### [JavaScript Collaborative Todo List](./javascript-collaborative-todo)
 [<img src="../.github/assets/examples/collaborative-todo-list.png" alt="JavaScript Todo" width="400">](./javascript-collaborative-todo)
 
 **Vanilla JavaScript todo app with minimal Express.js backend**
@@ -54,11 +48,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Express.js](https://img.shields.io/badge/express.js-%23404d59.svg?style=for-the-badge&logo=express&logoColor=%2361DAFB)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./javascript-collaborative-todo/README.md) | [🔧 Run Example](./javascript-collaborative-todo)
-
 ---
 
-### Next.js Tic-Tac-Toe Game
+### [Next.js Tic-Tac-Toe Game](./nextjs-tic-tac-toe)
 [<img src="../.github/assets/examples/tic-tac-toe.png" alt="Tic-Tac-Toe Game" width="400">](./nextjs-tic-tac-toe)
 
 **Multiplayer tic-tac-toe game with live scoreboard and turn management**
@@ -67,11 +59,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Next.js](https://img.shields.io/badge/Next.js-%23000000.svg?style=for-the-badge&logo=next.js&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./nextjs-tic-tac-toe/README.md) | [🔧 Run Example](./nextjs-tic-tac-toe)
-
 ---
 
-### Next.js Collaborative Drawing Canvas
+### [Next.js Collaborative Drawing Canvas](./nextjs-collaborative-drawing)
 [<img src="../.github/assets/examples/collaborative-drawing.png" alt="Collaborative Drawing" width="400">](./nextjs-collaborative-drawing)
 
 **Real-time collaborative drawing canvas with live cursors and synchronized strokes**
@@ -80,11 +70,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Next.js](https://img.shields.io/badge/Next.js-%23000000.svg?style=for-the-badge&logo=next.js&logoColor=white)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./nextjs-collaborative-drawing/README.md) | [🔧 Run Example](./nextjs-collaborative-drawing)
-
 ---
 
-### React Live Cursors
+### [React Live Cursors](./react-live-cursors)
 [<img src="../.github/assets/examples/react-live-cursors.png" alt="React Live Cursors" width="400">](./react-live-cursors)
 
 **Real-time collaborative cursor tracking with React**
@@ -95,11 +83,9 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Express.js](https://img.shields.io/badge/express.js-%23404d59.svg?style=for-the-badge&logo=express&logoColor=%2361DAFB)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./react-live-cursors/README.md) | [🔧 Run Example](./react-live-cursors)
-
 ---
 
-### JavaScript Live Cursors
+### [JavaScript Live Cursors](./javascript-live-cursors)
 [<img src="../.github/assets/examples/react-live-cursors.png" alt="JavaScript Live Cursors" width="400">](./javascript-live-cursors)
 
 **Vanilla JavaScript live cursor tracking with real-time synchronization**
@@ -109,7 +95,16 @@ Welcome to the Zustand Multiplayer examples! These examples demonstrate various 
 ![Express.js](https://img.shields.io/badge/express.js-%23404d59.svg?style=for-the-badge&logo=express&logoColor=%2361DAFB)
 ![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
-[📖 View Documentation](./javascript-live-cursors/README.md) | [🔧 Run Example](./javascript-live-cursors)
+---
+
+### [Next.js Collaborative Spreadsheet](./nextjs-collaborative-spreadsheet)
+[<img src="../.github/assets/examples/spreadsheet.png" alt="Collaborative Spreadsheet" width="400">](./nextjs-collaborative-spreadsheet)
+
+**Real-time collaborative spreadsheet with formulas, formatting, and multi-user editing**
+
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-%23000000.svg?style=for-the-badge&logo=next.js&logoColor=white)
+![Zustand](https://img.shields.io/badge/zustand-%23FF6B6B.svg?style=for-the-badge&logo=zustand&logoColor=white)
 
 </div>
 
@@ -145,6 +140,7 @@ All examples require an API key from HPKV:
    pnpm --filter nextjs-collaborative-todo dev
    pnpm --filter nextjs-tic-tac-toe dev
    pnpm --filter nextjs-collaborative-drawing dev
+   pnpm --filter nextjs-collaborative-spreadsheet dev
    
    # JavaScript examples
    pnpm --filter javascript-chat dev
